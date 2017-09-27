@@ -1,0 +1,135 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="GameMenus.cpp">
+      <Filter>source\SKSE</Filter>
+    </ClCompile>
+    <ClCompile Include="IsolatedFunctions.cpp">
+      <Filter>source\Papyrus</Filter>
+    </ClCompile>
+    <ClCompile Include="SkyUtilities.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="NetworkState.cpp">
+      <Filter>source\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="Networking.cpp">
+      <Filter>source\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="NetworkHandler.cpp">
+      <Filter>source\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="Utilities.cpp">
+      <Filter>source\Helpers</Filter>
+    </ClCompile>
+    <ClCompile Include="md5.cpp">
+      <Filter>source\Helpers</Filter>
+    </ClCompile>
+    <ClCompile Include="NativeFunctions.cpp">
+      <Filter>source\Game</Filter>
+    </ClCompile>
+    <ClCompile Include="GameState.cpp">
+      <Filter>source\Game</Filter>
+    </ClCompile>
+    <ClCompile Include="GameEvents.cpp">
+      <Filter>source\Game</Filter>
+    </ClCompile>
+    <ClCompile Include="..\skse\GameReferences.cpp">
+      <Filter>source\SKSE</Filter>
+    </ClCompile>
+    <ClCompile Include="..\skse\GameObjects.cpp">
+      <Filter>source\SKSE</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="md5.h">
+      <Filter>headers\Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="SME_Prefix.h">
+      <Filter>headers\Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="SkyUtilities.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="GameMenus.h">
+      <Filter>headers\SKSE</Filter>
+    </ClInclude>
+    <ClInclude Include="IsolatedFunctions.h">
+      <Filter>headers\Papyrus</Filter>
+    </ClInclude>
+    <ClInclude Include="NetworkState.h">
+      <Filter>headers\Network</Filter>
+    </ClInclude>
+    <ClInclude Include="Networking.h">
+      <Filter>headers\Network</Filter>
+    </ClInclude>
+    <ClInclude Include="NetworkHandler.h">
+      <Filter>headers\Network</Filter>
+    </ClInclude>
+    <ClInclude Include="Utilities.h">
+      <Filter>headers\Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="Tests.h">
+      <Filter>headers\Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="NativeFunctions.h">
+      <Filter>headers\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="GameState.h">
+      <Filter>headers\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="GameEvents.h">
+      <Filter>headers\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Commands.h">
+      <Filter>headers\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="enums.h">
+      <Filter>headers\Helpers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="headers">
+      <UniqueIdentifier>{dcaf0e9a-6a9f-4816-96f8-80aa101d6895}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source">
+      <UniqueIdentifier>{6cdf2ba1-d5eb-4672-aab8-803d543265cf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\SKSE">
+      <UniqueIdentifier>{7f85c212-1db5-4b34-b2bc-681f45eb34b8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="headers\Helpers">
+      <UniqueIdentifier>{127907f9-d33c-49d4-b9c2-56a573f7f5b4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\Helpers">
+      <UniqueIdentifier>{bfa16b18-8135-4dab-9a33-39eaa94382ba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="headers\Papyrus">
+      <UniqueIdentifier>{2176e183-2b2a-4adb-940d-ebfc8b5eca1a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\Papyrus">
+      <UniqueIdentifier>{5be3d3bb-fdc4-4fe1-ba3d-32b4633ab315}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="headers\Game">
+      <UniqueIdentifier>{ef0628c0-26e9-4cb5-a0c3-2fbba055ca5f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="headers\Network">
+      <UniqueIdentifier>{f0ac351d-b246-4be9-bc09-9716e6b023ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\Network">
+      <UniqueIdentifier>{7970f578-bd5c-4179-a19a-64021a66c25b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\Game">
+      <UniqueIdentifier>{b193571f-5ff6-4107-9f17-32483c7d9140}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="headers\SKSE">
+      <UniqueIdentifier>{752d095c-41d6-415b-96a8-bb51a288e47c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exports.def" />
+  </ItemGroup>
+</Project>

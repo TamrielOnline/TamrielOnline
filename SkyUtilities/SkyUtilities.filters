@@ -1,0 +1,100 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="SkyUtilities.cpp" />
+    <ClCompile Include="md5.cpp" />
+    <ClCompile Include="SharedMemory\SharedMemory.cpp">
+      <Filter>SharedMemory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\skse\GameObjects.cpp">
+      <Filter>skse</Filter>
+    </ClCompile>
+    <ClCompile Include="..\skse\GameReferences.cpp">
+      <Filter>skse</Filter>
+    </ClCompile>
+    <ClCompile Include="SBNetworking.cpp" />
+    <ClCompile Include="NativeFunctions.cpp" />
+    <ClCompile Include="PConsole.cpp" />
+    <ClCompile Include="GameMenus.cpp">
+      <Filter>skse\Copies</Filter>
+    </ClCompile>
+    <ClCompile Include="TamUtilities.cpp" />
+    <ClCompile Include="TamrielEvents.cpp" />
+    <ClCompile Include="Frameworks.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="md5.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="SkyUtilities.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleIni.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="SharedMemory\SharedMemory.h">
+      <Filter>SharedMemory</Filter>
+    </ClInclude>
+    <ClInclude Include="CellList.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\skse\GameObjects.h">
+      <Filter>skse</Filter>
+    </ClInclude>
+    <ClInclude Include="..\skse\GameReferences.h">
+      <Filter>skse</Filter>
+    </ClInclude>
+    <ClInclude Include="Commands.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="TamUtilities.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="SBNetworking.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="NativeFunctions.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryHandler.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="SME_Prefix.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="PConsole.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="TamrielEvents.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="common\enums.h" />
+    <ClInclude Include="atomicops.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="readerwriterqueue.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Frameworks.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Headers">
+      <UniqueIdentifier>{f3b92ad8-584c-473a-8e76-4e1dc50536c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SharedMemory">
+      <UniqueIdentifier>{d561f58f-87ea-4506-82c3-f264b9f81198}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="skse">
+      <UniqueIdentifier>{56831bc4-eb4a-42bd-a29f-1552bab38985}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="skse\Copies">
+      <UniqueIdentifier>{5b0ee6b9-6a76-45a8-9308-c293c6096546}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exports.def" />
+  </ItemGroup>
+</Project>

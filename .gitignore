@@ -1,0 +1,6 @@
+/common/
+/skse/
+/Debug/
+/Release/
+*.VC.opendb
+/.vs/

@@ -1,0 +1,4 @@
+*.obj
+*.pdb
+*.Build.CppClean.log
+*.log
