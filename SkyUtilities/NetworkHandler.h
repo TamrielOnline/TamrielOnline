@@ -908,7 +908,7 @@ public:
 	inline static BSFixedString GetRemotePlayerDataString(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName)
 	{
 		string normalizedName = tName.data;
-
+		
 		if (normalizedName == "lastLocation")
 			return RemotePlayerMap[playerNr].lastLocation.c_str();
 		else if (normalizedName == "locationid")

@@ -15,7 +15,7 @@ bool SkyUtility::IsPlayerWeaponDrawn()
 	return (*g_thePlayer)->actorState.IsWeaponDrawn();
 }
 
-//Is this key the same as the key being pressed in the event?
+//Is this key the same as the key being pressed in the event? - Uses DirectX Scancodes
 bool SkyUtility::IsEventKey(InputEvent** evn, UInt32 keyValue)
 {
 	ButtonEvent* e = (ButtonEvent*)*evn;
@@ -34,6 +34,18 @@ bool SkyUtility::IsEventKey(InputEvent** evn, UInt32 keyValue)
 bool SkyUtility::IsKeyPressed(const char* localKey)
 {
 	return NativeFunctions::IsKeyPressed(nullptr, NativeFunctions::GetMappedKey(nullptr, localKey, 0xFF));
+}
+
+void SkyUtility::OnKeyEvent(BYTE key)
+{
+	if (key == SkyUtility::instance->clientKey)
+	{
+		if (SkyUtility::instance->connectTimer.HasMillisecondsPassed(5000))
+		{
+			SkyUtility::instance->connectTimer.StartTimer();
+			SkyUtility::instance->Connect();
+		}
+	}
 }
 
 UInt32 SkyUtility::GetStartupKey()
@@ -76,9 +88,10 @@ bool SkyUtility::IsInGame()
 	return *g_skyrimVM && *g_thePlayer && !NativeFunctions::IsWindowOpen("Fader Menu") && !NativeFunctions::IsWindowOpen("Loading Menu") && !NativeFunctions::IsWindowOpen("Mist Menu") && !NativeFunctions::IsWindowOpen("Main Menu") && !NativeFunctions::IsWindowOpen("Top Menu");
 }
 
-std::mutex pos_mtx, lock_mtx, update_mtx, npc_mtx, npc_update_mtx;
 void SkyUtility::Run()
 {
+	static std::mutex pos_mtx, lock_mtx, update_mtx, npc_mtx, npc_update_mtx;
+
 	if (!complete)
 	{
 		if (!completeInitA)
@@ -112,7 +125,7 @@ void SkyUtility::Run()
 		NetworkHandler::APS(nullptr, *g_thePlayer, "SkyBrothers LoadPlayer");
 		GameState::plState.displayName = NativeFunctions::GetDisplayName(*g_thePlayer).data;
 
-		string notificationText = "[TamrielOnline] started, press '" + GetKeyName(clientKey) + "' to use";
+		string notificationText = "[TamrielOnline] started, press '" + GetKeyName(MapVirtualKey(clientKey, MAPVK_VSC_TO_VK)) + "' to use";
 		Notification(GameState::skyrimVMRegistry, 0, nullptr, &BSFixedString(notificationText.c_str()));
 
 		complete = true;
@@ -127,17 +140,6 @@ void SkyUtility::Run()
 	}
 
 	Tests::RunTests();
-
-	bool clientKeyPressed = GetKeyPressed(GetStartupKey());
-
-	if (clientKeyPressed)
-	{
-		if (connectTimer.HasMillisecondsPassed(5000))
-		{
-			connectTimer.StartTimer();
-			Connect();
-		}
-	}
 
 	Networking::instance->run();
 

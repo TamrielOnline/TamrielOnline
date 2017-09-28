@@ -65,7 +65,6 @@ Networking::Networking()
 	: mLoadBalancingClient(*this, appId, appVersion, ExitGames::Photon::ConnectionProtocol::UDP, autoLobbyStats, regionSelectionMode)
 	  , mLastPlayerNr(-1)
 	  , mLastInput(INPUT_NON)
-	  , mAutoJoinRoom(true)
 
 #ifdef _EG_MS_COMPILER
 #	pragma warning(pop)
@@ -87,7 +86,7 @@ void Networking::registerForStateUpdates(NetworkLogicListener* listener)
 
 void Networking::connect()
 {
-	USER_NAME = std::to_string(rand() % INT_MAX).c_str();
+	USER_NAME = ExitGames::Common::JString(rand() % 100000);
 
 	//Connecting to Photon
 	mLoadBalancingClient.connect(ExitGames::LoadBalancing::AuthenticationValues().setUserID(USER_NAME));
@@ -231,10 +230,7 @@ void Networking::connectReturn(int errorCode, const ExitGames::Common::JString& 
 	}
 
 	mStateAccessor.setState(STATE_CONNECTED);
-	_MESSAGE("Connected to cluster.");
-
-	if (mAutoJoinRoom)
-		opJoinOrCreateRoom();
+	opJoinOrCreateRoom();
 }
 
 void Networking::disconnectReturn(void)
@@ -283,7 +279,7 @@ void Networking::joinOrCreateRoomReturn(int localPlayerNr, const ExitGames::Comm
 	//Room has been entered, regularly sending dummy events now
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"localPlayerNr: %d", localPlayerNr);
 	mStateAccessor.setState(STATE_JOINED);
-	//_MESSAGE("Connection successful!");
+	_MESSAGE("Connected to cluster.");
 	OnConnected();
 }
 

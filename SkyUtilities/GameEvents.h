@@ -311,15 +311,18 @@ public:
 
 			if (!GameState::IsMenuOpen)
 			{
+				if (!GameState::IsLoading && (*evn) && (*evn)->eventType == InputEvent::kEventType_Button)
+					SkyUtility::OnKeyEvent(((ButtonEvent*)*evn)->keyMask);
+
 				if (NetworkHandler::HasInitialized && SkyUtility::instance->complete && NetworkState::bIsConnected)
 				{
-					if (jumpingTimer.HasMillisecondsPassed(1250) && SkyUtility::instance->IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Jump", 0xFF)))
+					if (jumpingTimer.HasMillisecondsPassed(1250) && SkyUtility::IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Jump", 0xFF)))
 					{
 						jumpingTimer.StartTimer();
 						NetworkHandler::SendData("StartJumping");
 					}
 
-					if (SkyUtility::instance->IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Sneak", 0xFF)))
+					if (SkyUtility::IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Sneak", 0xFF)))
 					{
 						NetworkHandler::PrintNote("Sneak pressed.");
 
@@ -329,13 +332,13 @@ public:
 							NetworkHandler::SendData("StopSneaking");
 					}
 
-					if (SkyUtility::instance->IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Shout", 0xFF)))
+					if (SkyUtility::IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Shout", 0xFF)))
 					{
 						if (GetEquippedShout(GameState::skyrimVMRegistry, 0, *g_thePlayer) && GetVoiceRecoveryTime(GameState::skyrimVMRegistry, 0, *g_thePlayer) == 0)
 							NetworkHandler::SendData((char*)("ShoutRelease," + std::to_string(GameState::plState.fShoutId)).c_str());
 					}
 
-					if (SkyUtility::instance->IsPlayerWeaponDrawn() && SkyUtility::instance->IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Left Attack/Block", 0xFF)))
+					if (SkyUtility::instance->IsPlayerWeaponDrawn() && SkyUtility::IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Left Attack/Block", 0xFF)))
 					{
 						int EquipType = GetEquippedItemType(GameState::skyrimVMRegistry, 0, *g_thePlayer, 0);
 						string netData = "";

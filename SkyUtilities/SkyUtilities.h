@@ -49,10 +49,11 @@ public:
 	static void DisableNet(StaticFunctionTag* base, Actor* target);
 	static void OnConnected();
 	static void OnDisconnected();
+	static void OnKeyEvent(BYTE key);
 	static void ReceiveEvent(const int playerNr, const nByte eventCode, const Object& eventContent);
 
 	bool IsKeyPressed(const char* localKey);
-	bool IsEventKey(InputEvent** evn, UInt32 keyValue);
+	static bool IsEventKey(InputEvent** evn, UInt32 keyValue);
 	bool IsPlayerWeaponDrawn();
 	bool ArmorCheck(UInt32 armorFormId, UInt32* idRef, const char* tName);
 	bool ArmorCheck(UInt32 armorFormId, UInt32* idRef, bool isEquipping, UInt32 itemId, const char* tName);
@@ -68,5 +69,4 @@ public:
 	void Connect();
 	void GetInitialPlayerData(bool response = false);
 	void Run();
-	void ConnectionStabilizer();
 };

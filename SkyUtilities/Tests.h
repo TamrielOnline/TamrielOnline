@@ -2,6 +2,8 @@
 
 #include "NativeFunctions.h"
 
+using namespace ExitGames::Common;
+
 namespace Tests
 {
 	static Actor* testPlayer;
@@ -118,9 +120,21 @@ namespace Tests
 		DisableNoWait((*g_skyrimVM)->GetClassRegistry(), 0, testPlayer, false);
 	}
 
+	static void CacheTest()
+	{
+		if (!NetworkState::bIsConnected)
+			return;
+
+		ExitGames::Common::Hashtable testTable = ExitGames::Common::Hashtable();
+		
+		testTable.put<ExitGames::Common::JString>("This is a test.");
+
+		Networking::instance->sendEventCached<ExitGames::Common::Hashtable>(true, testTable, NetworkState::EV::ID_DEBUG, NetworkState::CHANNEL::EVENT);
+	}
+
 	static bool isTesting = false;
 	static bool isDebugging = false;
-	static void (*ActiveTest)() = EnableStateTest; // What test are we running?
+	static void (*ActiveTest)() = CacheTest; // What test are we running?
 
 	static void RunTests()
 	{
