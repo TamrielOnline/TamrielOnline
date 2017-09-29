@@ -153,7 +153,7 @@ void StartHooks()
 		enabledDispatcher["OpenClose"] = g_openCloseEventDispatcher->Try_AddEventSink(&t_openCloseEventHandler);
 
 	//if (!enabledDispatcher["Generic"])
-	//	enabledDispatcher["Generic"] = g_genericEvent->AddEventSink(&t_genericEventHandler);
+	//	enabledDispatcher["Generic"] = g_genericEvent->Try_AddEventSink(&t_genericEventHandler);
 
 	if (!enabledDispatcher["Input"])
 		enabledDispatcher["Input"] = (*g1_inputEventDispatcher)->Try_AddEventSink(&t_inputEventHandler);
@@ -239,7 +239,6 @@ extern "C"
 
 		//Register callback for SKSE messaging interface
 		g_messaging->RegisterListener(g_pluginHandle, "SKSE", SKSEMessageReceptor);
-
 		return true;
 	}
 };

@@ -38,8 +38,11 @@ public:
 	{
 		ActorValueInfo av;
 		Transform transform;
+		NiNode* root;
 		int weight, sex;
 		string raceName, displayName;
+		BGSLocation* currentLocation;
+		TESWorldSpace* currentWorldspace;
 		float height;
 		bool bIsBlocking, bIsRidingHorse, bIsAnimationPlaying, bLeftCasting, bRightCasting;
 		UInt32 fRightSpellName, fLeftSpellName, fHeadArmorId, fHairTypeId, fHairLongId, fVoiceId, fAmmoId, fBodyArmorId, fHandsArmorId, fForeArmArmorId,
@@ -48,7 +51,7 @@ public:
 	};
 
 	static TESQuest* mainQuest;
-	static bool IsLoading, IsMenuOpen;
+	static bool IsLoading, IsMenuOpen, IsRefreshing;
 	static ActorState plState;
 	static string loadOrder;
 	static TESFaction* npcFaction;

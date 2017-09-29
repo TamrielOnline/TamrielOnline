@@ -57,7 +57,10 @@ public:
 	void run(void);
 	void runBasic(void);
 	void sendKeepAlive(void);
-	void connect();
+	void reconnect(void);
+	void connect(void);
+	void changeRoom(std::string roomName);
+	bool leaveRoom(void);
 	void opCreateRoom(void);
 	void opJoinRandomRoom(void);
 	void opJoinOrCreateRoom(void);
@@ -66,6 +69,7 @@ public:
 	int getLocalId(void);
 	int getServerTime(void);
 	int getPlayerCount(void);
+	bool getIsHost(void);
 
 	//Check if the local player is the master client
 	bool IsHost()
@@ -124,6 +128,7 @@ public:
 	void (*OnConnected)();
 	void (*OnDisconnected)();
 	void (*OnExit)(int playerNr);
+	void (*OnRoomEnter)();
 	void (*OnReceiveEvent)(int playerNr, nByte eventCode, const ExitGames::Common::Object& eventContent);
 	void (*_MESSAGE)(const char* message);
 

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdlib>
+#include "NetworkState.h"
 
 #define GETTICKMS() static_cast<int>(GetTickCount())
 
@@ -86,10 +87,8 @@ void Networking::registerForStateUpdates(NetworkLogicListener* listener)
 
 void Networking::connect()
 {
-	USER_NAME = ExitGames::Common::JString(rand() % 100000);
-
 	//Connecting to Photon
-	mLoadBalancingClient.connect(ExitGames::LoadBalancing::AuthenticationValues().setUserID(USER_NAME));
+	mLoadBalancingClient.connect();
 	mStateAccessor.setState(STATE_CONNECTING);
 }
 
@@ -143,6 +142,28 @@ void Networking::sendKeepAlive(void)
 void Networking::debugReturn(int debugLevel, const ExitGames::Common::JString& string)
 {
 	//Debug output
+}
+
+bool Networking::leaveRoom()
+{
+	return mLoadBalancingClient.opLeaveRoom(false, false);
+}
+
+void Networking::reconnect()
+{
+	mLoadBalancingClient.reconnectAndRejoin();
+}
+
+void Networking::changeRoom(std::string roomName)
+{
+	ExitGames::LoadBalancing::RoomOptions roomOptions(true, true, 255);
+	roomOptions.setPlayerTtl(INT_MAX / 2);
+	roomOptions.setEmptyRoomTtl(10000);
+
+	//Joining or creating room
+	ExitGames::Common::JString name(roomName.c_str());
+	mLoadBalancingClient.opJoinOrCreateRoom(name, roomOptions, 0);
+	mStateAccessor.setState(STATE_JOINING);
 }
 
 void Networking::connectionErrorReturn(int errorCode)
@@ -230,7 +251,7 @@ void Networking::connectReturn(int errorCode, const ExitGames::Common::JString& 
 	}
 
 	mStateAccessor.setState(STATE_CONNECTED);
-	opJoinOrCreateRoom();
+	OnConnected();
 }
 
 void Networking::disconnectReturn(void)
@@ -259,7 +280,7 @@ void Networking::createRoomReturn(int localPlayerNr, const ExitGames::Common::Ha
 	//Room has been created, regularly sending dummy events now.
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"localPlayerNr: %d", localPlayerNr);
 	mStateAccessor.setState(STATE_JOINED);
-	OnConnected();
+	OnRoomEnter();
 }
 
 void Networking::joinOrCreateRoomReturn(int localPlayerNr, const ExitGames::Common::Hashtable& gameProperties, const ExitGames::Common::Hashtable& playerProperties, int errorCode, const ExitGames::Common::JString& errorString)
@@ -280,7 +301,7 @@ void Networking::joinOrCreateRoomReturn(int localPlayerNr, const ExitGames::Comm
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"localPlayerNr: %d", localPlayerNr);
 	mStateAccessor.setState(STATE_JOINED);
 	_MESSAGE("Connected to cluster.");
-	OnConnected();
+	OnRoomEnter();
 }
 
 void Networking::joinRoomReturn(int localPlayerNr, const ExitGames::Common::Hashtable& gameProperties, const ExitGames::Common::Hashtable& playerProperties, int errorCode, const ExitGames::Common::JString& errorString)
@@ -300,7 +321,7 @@ void Networking::joinRoomReturn(int localPlayerNr, const ExitGames::Common::Hash
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"localPlayerNr: %d", localPlayerNr);
 	mStateAccessor.setState(STATE_JOINED);
 	//_MESSAGE("We did it, we did it!");
-	OnConnected();
+	OnRoomEnter();
 }
 
 void Networking::joinRandomRoomReturn(int localPlayerNr, const ExitGames::Common::Hashtable& /*gameProperties*/, const ExitGames::Common::Hashtable& /*playerProperties*/, int errorCode, const ExitGames::Common::JString& errorString)
@@ -320,6 +341,7 @@ void Networking::joinRandomRoomReturn(int localPlayerNr, const ExitGames::Common
 	//Room has been successfully joined, regularly sending dummy events now
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"localPlayerNr: %d", localPlayerNr);
 	mStateAccessor.setState(STATE_JOINED);
+	OnRoomEnter();
 }
 
 void Networking::leaveRoomReturn(int errorCode, const ExitGames::Common::JString& errorString)
@@ -336,6 +358,7 @@ void Networking::leaveRoomReturn(int errorCode, const ExitGames::Common::JString
 
 	//Room has been successfully left
 	mStateAccessor.setState(STATE_LEFT);
+	changeRoom(to_string(NetworkState::locationId));
 }
 
 void Networking::joinLobbyReturn(void)
@@ -370,4 +393,12 @@ void Networking::onAvailableRegions(const ExitGames::Common::JVector<ExitGames::
 	// select first region from list
 	mLoadBalancingClient.selectRegion(availableRegions[0]);
 	_MESSAGE("Region selected.");
+}
+
+bool Networking::getIsHost()
+{
+	if (!mLoadBalancingClient.getIsInRoom())
+		return false;
+
+	return mLoadBalancingClient.getCurrentlyJoinedRoom().getPlayerForNumber(mLastPlayerNr)->getIsMasterClient();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NativeFunctions.h"
+#include <thread>
 
 using namespace ExitGames::Common;
 
@@ -132,9 +133,173 @@ namespace Tests
 		Networking::instance->sendEventCached<ExitGames::Common::Hashtable>(true, testTable, NetworkState::EV::ID_DEBUG, NetworkState::CHANNEL::EVENT);
 	}
 
+	static void ThreadTest()
+	{
+		_MESSAGE((char*)&std::this_thread::get_id());
+	}
+
+	static void LocationTest()
+	{
+		static Utilities::Timer locationTimer;
+
+		if (locationTimer.HasMillisecondsPassed(2000))
+		{
+			locationTimer.StartTimer();
+
+			TESWorldSpace* tWorldspace = CALL_MEMBER_FN(*g_thePlayer, GetWorldspace)();
+			TESWorldSpace* altWorldspace = NULL;
+			TESWorldSpace* reWorldspace = NULL;
+			TESObjectCELL* altCell = (*g_thePlayer)->parentCell;
+			Actor* randomActor = NULL;
+			TESObjectREFR* randomObject = NULL;
+
+			_MESSAGE("altCell Members");
+
+			// "Fully" representative of the interior cell.
+			if (altCell)
+			{
+				Actor* aRef = NULL;
+				TESObjectREFR* instanceRef = NULL;
+				for (int i = 0; altCell->objectList.GetNthItem(i, instanceRef); i++)
+				{
+					if (!instanceRef || instanceRef->formID == (*g_thePlayer)->formID)
+						continue;
+
+					aRef = DYNAMIC_CAST(instanceRef, TESObjectREFR, Actor);
+
+					if (aRef)
+					{
+						if (aRef->loadedState)
+						{
+							_MESSAGE(to_string(aRef->formID).c_str());
+							_MESSAGE(CALL_MEMBER_FN(aRef, GetReferenceName)());
+							randomActor = aRef;
+						}
+					}
+					else
+						randomObject = instanceRef;
+				}
+			}
+
+			if (randomActor)
+			{
+				ExtraLocation* eLocation = static_cast<ExtraLocation*>(randomActor->extraData.GetByType(kExtraData_Location));
+				BGSLocation* tLocation = (eLocation ? eLocation->location : NULL);
+				ExtraLocation* rLocation = static_cast<ExtraLocation*>(randomObject->extraData.GetByType(kExtraData_Location));
+				BGSLocation* reLocation = (rLocation ? rLocation->location : NULL);
+				ExtraLocation* pLocation = static_cast<ExtraLocation*>((*g_thePlayer)->extraData.GetByType(kExtraData_Location));
+				BGSLocation* plLocation = (pLocation ? pLocation->location : NULL);
+				ExtraPersistentCell* eCell = static_cast<ExtraPersistentCell*>(randomActor->extraData.GetByType(kExtraData_PersistentCell));
+				TESObjectCELL* tCell = (eCell ? eCell->cell : NULL);
+				ExtraPersistentCell* iCell = static_cast<ExtraPersistentCell*>(((BaseExtraList*)altCell->extraData)->GetByType(kExtraData_PersistentCell));
+				TESObjectCELL* ieCell = (iCell ? iCell->cell : NULL);
+				ExtraPersistentCell* rCell = static_cast<ExtraPersistentCell*>(randomObject->extraData.GetByType(kExtraData_PersistentCell));
+				TESObjectCELL* reCell = (rCell ? rCell->cell : NULL);
+
+				_MESSAGE("tCell Members");
+
+				// "Fully" representative of exterior cell.
+				if (tCell)
+				{
+					Actor* aRef = NULL;
+					TESObjectREFR* instanceRef = NULL;
+					for (int i = 0; tCell->objectList.GetNthItem(i, instanceRef); i++)
+					{
+						if (!instanceRef || instanceRef->formID == (*g_thePlayer)->formID)
+							continue;
+
+						aRef = DYNAMIC_CAST(instanceRef, TESObjectREFR, Actor);
+
+						if (aRef && aRef->loadedState)
+						{
+							_MESSAGE(to_string(aRef->formID).c_str());
+							_MESSAGE(CALL_MEMBER_FN(aRef, GetReferenceName)());
+						}
+					}
+				}
+
+				_MESSAGE("reCell Members");
+
+				// Also "fully" representative of exterior cell.
+				if (reCell)
+				{
+					Actor* aRef = NULL;
+					TESObjectREFR* instanceRef = NULL;
+					for (int i = 0; reCell->objectList.GetNthItem(i, instanceRef); i++)
+					{
+						if (!instanceRef || instanceRef->formID == (*g_thePlayer)->formID)
+							continue;
+
+						aRef = DYNAMIC_CAST(instanceRef, TESObjectREFR, Actor);
+
+						if (aRef && aRef->loadedState)
+						{
+							_MESSAGE(to_string(aRef->formID).c_str());
+							_MESSAGE(CALL_MEMBER_FN(aRef, GetReferenceName)());
+						}
+					}
+				}
+
+				_MESSAGE("tLocation");
+				if (tLocation)
+					_MESSAGE(to_string(tLocation->formID).c_str());
+				_MESSAGE(to_string(GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer)->formID).c_str());
+
+				// Not equivalent to any of the former.
+				_MESSAGE("reLocation");
+				if (reLocation)
+					_MESSAGE(to_string(reLocation->formID).c_str());
+
+				// Not equivalent to any of the former.
+				_MESSAGE("plLocation");
+				if (plLocation)
+					_MESSAGE(to_string(plLocation->formID).c_str());
+
+				_MESSAGE("tWorldspace");
+				if (tWorldspace)
+					_MESSAGE(to_string(tWorldspace->formID).c_str());
+
+				_MESSAGE("player Worldspace");
+
+				if (GetWorldSpace(GameState::skyrimVMRegistry, 0, *g_thePlayer))
+					_MESSAGE(to_string(GetWorldSpace(GameState::skyrimVMRegistry, 0, *g_thePlayer)->formID).c_str());
+
+				_MESSAGE("altWorldspace");
+
+				altWorldspace = CALL_MEMBER_FN(randomActor, GetWorldspace)();
+				if (altWorldspace)
+					_MESSAGE(to_string(altWorldspace->formID).c_str());
+
+				_MESSAGE("reWorldspace");
+
+				reWorldspace = CALL_MEMBER_FN(randomObject, GetWorldspace)();
+				if (reWorldspace)
+					_MESSAGE(to_string(reWorldspace->formID).c_str());
+
+				_MESSAGE("altCell Worldspace");
+
+				// All prior worldspaces are equivalent except for this one, and they are all NULL when a location is loading.
+				if (altCell->unk84)
+					_MESSAGE(to_string(altCell->unk84->formID).c_str());
+
+				_MESSAGE("tCell");
+
+				// Not equivalent
+				if (tCell)
+					_MESSAGE(to_string(tCell->formID).c_str());
+				_MESSAGE(to_string((*g_thePlayer)->parentCell->formID).c_str());
+
+				_MESSAGE("ieCell");
+
+				if (ieCell)
+					_MESSAGE(to_string(ieCell->formID).c_str());
+			}
+		}
+	}
+
 	static bool isTesting = false;
 	static bool isDebugging = false;
-	static void (*ActiveTest)() = CacheTest; // What test are we running?
+	static void (*ActiveTest)() = LocationTest; // What test are we running?
 
 	static void RunTests()
 	{

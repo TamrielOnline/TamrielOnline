@@ -18,7 +18,7 @@ class SkyUtility
 {
 private:
 	map<string, vector<string> >* consoleMap;
-	string lastCommandEntered { "" }, tempLoc { "" };
+	string lastCommandEntered { "" };
 	TESQuest* mainQuest { nullptr };
 	bool completeInitA { false }, completeInitB { false };
 	bool InitialPosition { true }, bowStart { false };
@@ -49,6 +49,7 @@ public:
 	static void DisableNet(StaticFunctionTag* base, Actor* target);
 	static void OnConnected();
 	static void OnDisconnected();
+	static void OnRoomEnter();
 	static void OnKeyEvent(BYTE key);
 	static void ReceiveEvent(const int playerNr, const nByte eventCode, const Object& eventContent);
 
@@ -65,8 +66,8 @@ public:
 	void CheckCombatAction(SKSEActionEvent e);
 	void SetupCallbacks();
 	void UpdateCheck();
-	void RefreshLocation();
+	void RefreshLocation(bool lite = false);
 	void Connect();
-	void GetInitialPlayerData(bool response = false);
+	void GetInitialPlayerData();
 	void Run();
 };
