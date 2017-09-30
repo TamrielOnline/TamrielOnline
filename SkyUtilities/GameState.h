@@ -51,7 +51,7 @@ public:
 	};
 
 	static TESQuest* mainQuest;
-	static bool IsLoading, IsMenuOpen, IsRefreshing;
+	static bool IsLoading, IsMenuOpen, IsRefreshing, IsInterior;
 	static ActorState plState;
 	static string loadOrder;
 	static TESFaction* npcFaction;

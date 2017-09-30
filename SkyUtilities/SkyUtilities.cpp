@@ -112,6 +112,7 @@ void SkyUtility::Run()
 			if (GameState::mainQuest == nullptr)
 			{
 				clientKey = (BYTE)strtoul(Utilities::GetIniVar(CONFIG_FILE, "main", "clientKey").c_str(), nullptr, 0);
+				npcEnabled = (bool)strtoul(Utilities::GetIniVar(CONFIG_FILE, "LanSettings", "npc").c_str(), nullptr, 0);
 				GameState::mainQuest = DYNAMIC_CAST(LookupFormByID(0x0003372B), TESForm, TESQuest); //Don't start until we leave the starting area (created our character)
 				SetINIBool(GameState::skyrimVMRegistry, 23000, nullptr, &BSFixedString("bUseFaceGenPreprocessedHeads:General"), false);
 				SetINIBool(GameState::skyrimVMRegistry, 23000, nullptr, &BSFixedString("bAlwaysActive:General"), true);
@@ -138,7 +139,6 @@ void SkyUtility::Run()
 	{
 		Networking::instance->sendKeepAlive();
 		Networking::instance->runBasic();
-		RefreshLocation(true);
 		return;
 	}
 
@@ -154,21 +154,24 @@ void SkyUtility::Run()
 
 		if (NetworkHandler::HasInitialized)
 		{
-			//Stagger the player updates from the NPC updates
-			if (npcTimer.HasMillisecondsPassed(1000))
+			if (npcEnabled)
 			{
-				std::unique_lock<std::mutex> lock(npc_mtx, std::try_to_lock);
-
-				if (lock.owns_lock())
+				//Stagger the player updates from the NPC updates
+				if (npcTimer.HasMillisecondsPassed(1000))
 				{
-					npcTimer.StartTimer();
-					while (!NetworkHandler::RemoteNpcUpdates.empty())
-					{
-						NetworkHandler::UpdateNpc(NetworkHandler::RemoteNpcUpdates.front().second, NetworkHandler::RemoteNpcUpdates.front().first);
-						NetworkHandler::RemoteNpcUpdates.pop();
-					}
+					std::unique_lock<std::mutex> lock(npc_mtx, std::try_to_lock);
 
-					NetworkHandler::SendNpcUpdate();
+					if (lock.owns_lock())
+					{
+						npcTimer.StartTimer();
+						while (!NetworkHandler::RemoteNpcUpdates.empty())
+						{
+							NetworkHandler::UpdateNpc(NetworkHandler::RemoteNpcUpdates.front().second, NetworkHandler::RemoteNpcUpdates.front().first);
+							NetworkHandler::RemoteNpcUpdates.pop();
+						}
+
+						NetworkHandler::SendNpcUpdate();
+					}
 				}
 			}
 
@@ -182,35 +185,48 @@ void SkyUtility::Run()
 					NetworkHandler::UpdateTOD();
 
 					TESObjectCELL* tCell = NULL;
-					if (NetworkHandler::fullRefresh)
+					if ((*g_thePlayer)->parentCell)
 					{
-						tCell = (*g_thePlayer)->parentCell;
-						NetworkHandler::fullRefresh = false;
-					}
-					else
-					{
-						ExtraPersistentCell* eCell = static_cast<ExtraPersistentCell*>(
-							(*g_thePlayer)->parentCell->objectList[0]->extraData.GetByType(kExtraData_PersistentCell));
-						tCell = (eCell ? eCell->cell : NULL);
-					}
 
-					if (tCell)
-					{
-						Actor* aRef = NULL;
-						TESObjectREFR* instanceRef = NULL;
-						for (int i = 0; tCell->objectList.GetNthItem(i, instanceRef); i++)
+						if (NetworkHandler::fullRefresh)
 						{
-							if (!instanceRef || instanceRef->formID == (*g_thePlayer)->formID)
-								continue;
-
-							aRef = DYNAMIC_CAST(instanceRef, TESObjectREFR, Actor);
-
-							if (aRef && aRef->loadedState)
+							tCell = (*g_thePlayer)->parentCell;
+							NetworkHandler::fullRefresh = false;
+						}
+						else
+						{
+							ExtraPersistentCell* eCell = NULL;
+							for (int i = 0; i < (*g_thePlayer)->parentCell->objectList.count; i++)
 							{
-								if (NetworkHandler::IsLocationMaster())
-									NetworkHandler::UpdateLocalNpcList(aRef);
-								else
-									NetworkHandler::PreventingUnauthorizedSpawn(instanceRef);
+								if ((*g_thePlayer)->parentCell->objectList[i] && (*g_thePlayer)->parentCell->objectList[i]->formID != (*g_thePlayer)->formID)
+								{
+									eCell = static_cast<ExtraPersistentCell*>(
+										(*g_thePlayer)->parentCell->objectList[i]->extraData.GetByType(kExtraData_PersistentCell));
+								}
+
+							}
+
+							tCell = (eCell ? eCell->cell : NULL);
+						}
+
+						if (tCell)
+						{
+							Actor* aRef = NULL;
+							TESObjectREFR* instanceRef = NULL;
+							for (int i = 0; tCell->objectList.GetNthItem(i, instanceRef); i++)
+							{
+								if (!instanceRef || instanceRef->formID == (*g_thePlayer)->formID)
+									continue;
+
+								aRef = DYNAMIC_CAST(instanceRef, TESObjectREFR, Actor);
+
+								if (aRef && aRef->loadedState)
+								{
+									if (NetworkHandler::IsLocationMaster())
+										NetworkHandler::UpdateLocalNpcList(aRef);
+									else
+										NetworkHandler::PreventingUnauthorizedSpawn(instanceRef);
+								}
 							}
 						}
 					}
@@ -389,38 +405,35 @@ void SkyUtility::GetInitialPlayerData()
 	NetworkHandler::HasInitialized = true;
 }
 
-void SkyUtility::RefreshLocation(bool lite)
+void SkyUtility::RefreshLocation()
 {
-	TESWorldSpace* tWorldspace = CALL_MEMBER_FN(*g_thePlayer, GetWorldspace)();
-
-	if (!tWorldspace)
-		GameState::IsRefreshing = true;
-	else
+	if (GameState::IsRefreshing)
 	{
-		if (lite)
-			return;
+		GameState::plState.currentWorldspace = CALL_MEMBER_FN(*g_thePlayer, GetWorldspace)();
+		GameState::plState.currentLocation = GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer);
 
-		if (GameState::IsRefreshing || GameState::plState.currentWorldspace != tWorldspace)
+		NetworkState::locationId = (GameState::plState.currentWorldspace ? FormID(GameState::plState.currentWorldspace->formID).getId() : 0) +
+			(GameState::plState.currentLocation ? FormID(GameState::plState.currentLocation->formID).getId() : 0);
+
+		//Re-enable any npc's that may have gotten disabled in the previous area, by the networking.
+		NetworkHandler::RestoreLocalNpcs();
+
+		//We're moving to a new location, clear out our current npc list
+		NetworkHandler::LocalNpcMap.clear();
+		NetworkHandler::fullRefresh = true;
+
+		if (!Networking::instance->leaveRoom())
 		{
-			GameState::plState.currentWorldspace = tWorldspace;
-			GameState::plState.currentLocation = GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer);
-
-			NetworkState::locationId = FormID(tWorldspace->formID).getId() +
-				(GameState::plState.currentLocation ? FormID(GameState::plState.currentLocation->formID).getId() : 0);
-
-			if (NetworkState::bIsConnected)
-				NetworkHandler::locationEntryTime = NetworkHandler::lastTimeReference;
-
-			//Re-enable any npc's that may have gotten disabled in the previous area, by the networking.
-			NetworkHandler::RestoreLocalNpcs();
-
-			//We're moving to a new location, clear out our current npc list
-			NetworkHandler::LocalNpcMap.clear();
-			NetworkHandler::fullRefresh = true;
-			if (!Networking::instance->leaveRoom())
+			if (!NetworkHandler::HasInitialized)
 				Networking::instance->changeRoom(to_string(NetworkState::locationId).c_str());
-			GameState::IsRefreshing = false;
+			else
+			{
+				if (Networking::instance->getState() != State::STATE_LEAVING || Networking::instance->getState() != State::STATE_LEFT)
+					return;
+			}
 		}
+
+		GameState::IsRefreshing = false;
 	}
 }
 

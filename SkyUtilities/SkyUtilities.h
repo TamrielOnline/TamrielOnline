@@ -21,7 +21,7 @@ private:
 	string lastCommandEntered { "" };
 	TESQuest* mainQuest { nullptr };
 	bool completeInitA { false }, completeInitB { false };
-	bool InitialPosition { true }, bowStart { false };
+	bool InitialPosition { true }, bowStart { false }, npcEnabled;
 	BYTE clientKey;
 	TESObjectREFR* refHolder { nullptr };
 	Timer periodicTimeCheckUtilities, positionTimer, inactivityTimer, connectTimer, databaseTimer, npcTimer, questTimer, cellTimer, lockTimer;
@@ -66,7 +66,7 @@ public:
 	void CheckCombatAction(SKSEActionEvent e);
 	void SetupCallbacks();
 	void UpdateCheck();
-	void RefreshLocation(bool lite = false);
+	void RefreshLocation();
 	void Connect();
 	void GetInitialPlayerData();
 	void Run();

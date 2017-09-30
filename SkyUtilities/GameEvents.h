@@ -551,15 +551,21 @@ public:
 			else
 			{
 				if (loadingMenuOpen && !papyrusUI::IsMenuOpen(nullptr, "Loading Menu"))
+				{
+					GameState::IsRefreshing = true;
 					loadingMenuOpen = false;
+				}
 				else if (mistMenuOpen && !papyrusUI::IsMenuOpen(nullptr, "Mist Menu"))
+				{
+					GameState::IsRefreshing = true;
 					mistMenuOpen = false;
+				}
 
 				//Only refresh if we've already populated our master list, a loading menu was open, and is now closed.
 				if (!loadingMenuOpen && !mistMenuOpen && GameState::IsLoading)
 				{
-					GameState::IsLoading = false;
 					GameState::IsRefreshing = true;
+					GameState::IsLoading = false;
 				}
 			}
 

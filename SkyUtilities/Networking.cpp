@@ -147,6 +147,7 @@ void Networking::debugReturn(int debugLevel, const ExitGames::Common::JString& s
 bool Networking::leaveRoom()
 {
 	return mLoadBalancingClient.opLeaveRoom(false, false);
+	mStateAccessor.setState(STATE_LEAVING);
 }
 
 void Networking::reconnect()
@@ -356,9 +357,9 @@ void Networking::leaveRoomReturn(int errorCode, const ExitGames::Common::JString
 		return;
 	}
 
+	changeRoom(to_string(NetworkState::locationId));
 	//Room has been successfully left
 	mStateAccessor.setState(STATE_LEFT);
-	changeRoom(to_string(NetworkState::locationId));
 }
 
 void Networking::joinLobbyReturn(void)

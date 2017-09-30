@@ -17,7 +17,6 @@ bool NetworkHandler::ignoreSpawns;
 bool NetworkHandler::locationMaster = false;
 Timer NetworkHandler::dropTimer;
 bool NetworkHandler::HasInitialized;
-float NetworkHandler::locationEntryTime = INT_MAX, NetworkHandler::lastTimeReference = INT_MAX;
 vector<LockData> NetworkHandler::lockList;
 map<UInt32, int> NetworkHandler::ignoreLock;
 vector<string> NetworkHandler::myLoadOrder = vector<string>();

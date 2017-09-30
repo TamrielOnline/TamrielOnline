@@ -118,7 +118,6 @@ public:
 	bool disabled, isDead, isFlying, inCombat, sitting, remotePlayer, bleedingOut, isArrested, isBribed, isAlarmed, isTeammate, isSneaking, isUnconscious;
 	int x, y, z;
 	float xRot, yRot, zRot, height, jumpZOrigin;
-	float locationEntryTime;
 	UInt32 formId, baseId, combatTarget, sitType, positionControllerFormId, targetControllerFormId;
 	TESObjectCELL* lastCell;
 	ActorEx *positionControllerActor, *actor;
@@ -277,10 +276,6 @@ public:
 	and used to compare mods. When the same mods are found their prefixes (00-FF) are mapped to our local list. */
 	static vector<string> myLoadOrder;
 	static Timer receivedTime, dayTimer;
-	/* The time at the last update interval. The value of the global variable "GameDaysPassed" is used as the time reference, and is updated every ~1 sec */
-	static float lastTimeReference;
-	// The time we entered the current location. This value isn't realtime, it's assigned the most recent "lastTimeReference".
-	static float locationEntryTime;
 
 	//Used for both the debug console, and in-game display
 	inline static void PrintNote(const char* message)
@@ -379,8 +374,6 @@ public:
 
 		HasInitialized = false;
 		locationMaster = false;
-		NetworkHandler::locationEntryTime = INT_MAX;
-		NetworkHandler::lastTimeReference = INT_MAX;
 	}
 
 	inline static void OnDisconnection()
@@ -670,7 +663,6 @@ public:
 		RemotePlayerMap[bUser].firstUpdate = true;
 		RemotePlayerMap[bUser].alert = false;
 		RemotePlayerMap[bUser].sitType = 0;
-		RemotePlayerMap[bUser].locationEntryTime = INT_MIN;
 
 		// These values cannot be set in papyrus, they lead to errors.
 		NativeFunctions::ExecuteCommand("forceav Confidence 4", RemotePlayerMap[bUser].actor);
@@ -1190,10 +1182,6 @@ public:
 				yRot = ValueObject<int>(hashData.getValue(4)).getDataCopy(),
 				zRot = ValueObject<int>(hashData.getValue(5)).getDataCopy();
 
-			float newLocationEntryTime = ValueObject<float>(hashData.getValue(6)).getDataCopy();
-
-			//If the player has already spawned, update their location data. And unlock their movement.
-			RemotePlayerMap[playerNr].locationEntryTime = newLocationEntryTime;
 			OnLocationUpdate();
 
 			Tests::debug("ID_POSITION_UPDATE received.");
@@ -1317,21 +1305,17 @@ public:
 		{
 			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
 
-			lastTimeReference = (float)ValueObject<float>(hashData.getValue(0)).getDataCopy();
-			float tDay = (float)ValueObject<float>(hashData.getValue(1)).getDataCopy(),
+			float daysPassed = (float)ValueObject<float>(hashData.getValue(0)).getDataCopy(),
+				tDay = (float)ValueObject<float>(hashData.getValue(1)).getDataCopy(),
 				tHour = (float)ValueObject<float>(hashData.getValue(2)).getDataCopy(),
 				tMonth = (float)ValueObject<float>(hashData.getValue(3)).getDataCopy(),
 				tYear = (float)ValueObject<float>(hashData.getValue(4)).getDataCopy();
 
-			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed), lastTimeReference);
+			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed), daysPassed);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameHour), tHour);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDay), tDay);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameMonth), tMonth);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameYear), tYear);
-
-			//If we are not the host, update our location entry time for the first time.
-			if (locationEntryTime == INT_MAX)
-				locationEntryTime = lastTimeReference;
 
 			Tests::debug("ID_SET_TIME received.");
 		}
@@ -1539,21 +1523,15 @@ public:
 		// The host is responsible for updating the game time of everyone connected.
 		if (Networking::instance->IsHost())
 		{
-			lastTimeReference = GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed));
-
 			ExitGames::Common::Hashtable jUserVar = Hashtable();
 
-			jUserVar.put<int, float>(0, lastTimeReference);
+			jUserVar.put<int, float>(0, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed)));
 			jUserVar.put<int, float>(1, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDay)));
 			jUserVar.put<int, float>(2, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameHour)));
 			jUserVar.put<int, float>(3, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameMonth)));
 			jUserVar.put<int, float>(4, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameYear)));
 
 			Networking::instance->sendEvent<Hashtable>(false, jUserVar, NetworkState::EV::ID_SET_TIME, NetworkState::CHANNEL::EVENT);
-
-			//If we are the host, update our location entry time for the first time.
-			if (locationEntryTime == INT_MAX)
-				locationEntryTime = lastTimeReference - 1;
 		}
 
 		// One user per area is responsible for updating other nearby users of the current weather.
@@ -1582,7 +1560,6 @@ public:
 		hashData.put<int, int>(3, xRot);
 		hashData.put<int, int>(4, yRot);
 		hashData.put<int, int>(5, zRot);
-		hashData.put<int, float>(6, locationEntryTime);
 
 		Networking::instance->sendEvent<Hashtable>(false, hashData, NetworkState::EV::ID_POSITION_UPDATE, NetworkState::CHANNEL::EVENT);
 	}
