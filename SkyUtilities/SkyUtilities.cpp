@@ -56,9 +56,6 @@ UInt32 SkyUtility::GetStartupKey()
 void SkyUtility::ReceiveEvent(const int playerNr, const nByte eventCode, const Object& eventContent)
 {
 	NetworkHandler::ReceiveEvent(playerNr, eventCode, eventContent);
-
-	if (eventCode == NetworkState::EV::ID_SPAWN_PLAYER)
-		instance->GetInitialPlayerData(true); //Send our spawn data directly to the player.
 }
 
 void SkyUtility::SetupCallbacks()
@@ -66,13 +63,18 @@ void SkyUtility::SetupCallbacks()
 	Networking::instance->_MESSAGE = NetworkHandler::PrintNote;
 	Networking::instance->OnConnected = OnConnected;
 	Networking::instance->OnDisconnected = OnDisconnected;
-	Networking::instance->OnReceiveEvent = SkyUtility::ReceiveEvent;
+	Networking::instance->OnReceiveEvent = ReceiveEvent;
 	Networking::instance->OnExit = NetworkHandler::OnExit;
+	Networking::instance->OnRoomEnter = OnRoomEnter;
 }
 
 void SkyUtility::OnConnected()
 {
 	NetworkState::bIsConnected = true;
+}
+
+void SkyUtility::OnRoomEnter()
+{
 	instance->GetInitialPlayerData();
 }
 
@@ -90,7 +92,7 @@ bool SkyUtility::IsInGame()
 
 void SkyUtility::Run()
 {
-	static std::mutex pos_mtx, lock_mtx, update_mtx, npc_mtx, npc_update_mtx;
+	static std::mutex pos_mtx, lock_mtx, update_mtx, npc_mtx, refresh_mtx;
 
 	if (!complete)
 	{
@@ -110,6 +112,7 @@ void SkyUtility::Run()
 			if (GameState::mainQuest == nullptr)
 			{
 				clientKey = (BYTE)strtoul(Utilities::GetIniVar(CONFIG_FILE, "main", "clientKey").c_str(), nullptr, 0);
+				npcEnabled = (bool)strtoul(Utilities::GetIniVar(CONFIG_FILE, "LanSettings", "npc").c_str(), nullptr, 0);
 				GameState::mainQuest = DYNAMIC_CAST(LookupFormByID(0x0003372B), TESForm, TESQuest); //Don't start until we leave the starting area (created our character)
 				SetINIBool(GameState::skyrimVMRegistry, 23000, nullptr, &BSFixedString("bUseFaceGenPreprocessedHeads:General"), false);
 				SetINIBool(GameState::skyrimVMRegistry, 23000, nullptr, &BSFixedString("bAlwaysActive:General"), true);
@@ -140,45 +143,35 @@ void SkyUtility::Run()
 	}
 
 	Tests::RunTests();
-
 	Networking::instance->run();
 
 	if (NetworkState::bIsConnected)
 	{
+		std::unique_lock<std::mutex> lock(refresh_mtx, std::try_to_lock);
+
+		if (lock.owns_lock())
+			RefreshLocation();
+
 		if (NetworkHandler::HasInitialized)
 		{
-			if (!NetworkHandler::RemoteNpcUpdates.empty())
+			if (npcEnabled)
 			{
-				std::unique_lock<std::mutex> lock(npc_update_mtx, std::try_to_lock);
-
-				if (lock.owns_lock())
+				//Stagger the player updates from the NPC updates
+				if (npcTimer.HasMillisecondsPassed(1000))
 				{
-					if (NetworkHandler::clearRemoteNpcs)
+					std::unique_lock<std::mutex> lock(npc_mtx, std::try_to_lock);
+
+					if (lock.owns_lock())
 					{
-						NetworkHandler::RemoteNpcMap.clear();
-						NetworkHandler::RemoteNpcUpdates = queue<pair<int, PlayerData>>();
-						NetworkHandler::clearRemoteNpcs = false;
-					}
-					else
-					{
+						npcTimer.StartTimer();
 						while (!NetworkHandler::RemoteNpcUpdates.empty())
 						{
 							NetworkHandler::UpdateNpc(NetworkHandler::RemoteNpcUpdates.front().second, NetworkHandler::RemoteNpcUpdates.front().first);
 							NetworkHandler::RemoteNpcUpdates.pop();
 						}
+
+						NetworkHandler::SendNpcUpdate();
 					}
-				}
-			}
-
-			//Stagger the player updates from the NPC updates
-			if (npcTimer.HasMillisecondsPassed(1000))
-			{
-				std::unique_lock<std::mutex> lock(npc_mtx, std::try_to_lock);
-
-				if (lock.owns_lock())
-				{
-					npcTimer.StartTimer();
-					NetworkHandler::SendNpcUpdate();
 				}
 			}
 
@@ -191,52 +184,36 @@ void SkyUtility::Run()
 					cellTimer.StartTimer();
 					NetworkHandler::UpdateTOD();
 
-					if (NetworkHandler::fullRefresh)
+					TESObjectCELL* tCell = NULL;
+					if ((*g_thePlayer)->parentCell)
 					{
-						vector<TESObjectREFR*> tempNpcList;
 
-						//If it's an interior, use the interior search
-						if ((*g_thePlayer)->parentCell && IsInterior(GameState::skyrimVMRegistry, 0, (*g_thePlayer)->parentCell))
+						if (NetworkHandler::fullRefresh)
 						{
-							vector<TESObjectCELL*> childCells = NetworkHandler::LocChildCellLookupTable[NetworkHandler::PlayerCurrentLocation];
-							vector<BGSLocation*> childLocations = NetworkHandler::LocChildLocationLookupTable[NetworkHandler::PlayerCurrentLocation];
-
-							vector<TESObjectCELL*> tempChildCells;
-							for (int i = 0; i < childLocations.size(); i++)
-							{
-								tempChildCells = NetworkHandler::LocChildCellLookupTable[childLocations[i]];
-
-								for (int j = 0; j < tempChildCells.size(); j++)
-									childCells.push_back(tempChildCells[j]);
-							}
-
-							for (int i = 0; i < childCells.size(); i++)
-							{
-								tempNpcList = NativeFunctions::GetCellMembers(childCells[i]);
-
-								for (auto& tempNpc : tempNpcList)
-									NetworkHandler::AddLocalNpcList(DYNAMIC_CAST(tempNpc, TESObjectREFR, Actor));
-							}
+							tCell = (*g_thePlayer)->parentCell;
+							NetworkHandler::fullRefresh = false;
 						}
-
-						//If not, get exterior references
 						else
 						{
-							tempNpcList = NativeFunctions::GetLocationReferences(NetworkHandler::PlayerCurrentLocation);
+							ExtraPersistentCell* eCell = NULL;
+							for (int i = 0; i < (*g_thePlayer)->parentCell->objectList.count; i++)
+							{
+								if ((*g_thePlayer)->parentCell->objectList[i] && (*g_thePlayer)->parentCell->objectList[i]->formID != (*g_thePlayer)->formID)
+								{
+									eCell = static_cast<ExtraPersistentCell*>(
+										(*g_thePlayer)->parentCell->objectList[i]->extraData.GetByType(kExtraData_PersistentCell));
+								}
 
-							for (auto& tempNpc : tempNpcList)
-								NetworkHandler::AddLocalNpcList(DYNAMIC_CAST(tempNpc, TESObjectREFR, Actor));
+							}
+
+							tCell = (eCell ? eCell->cell : NULL);
 						}
 
-						NetworkHandler::fullRefresh = false;
-					}
-					else
-					{
-						if ((*g_thePlayer)->parentCell)
+						if (tCell)
 						{
 							Actor* aRef = NULL;
 							TESObjectREFR* instanceRef = NULL;
-							for (int i = 0; (*g_thePlayer)->parentCell->objectList.GetNthItem(i, instanceRef); i++)
+							for (int i = 0; tCell->objectList.GetNthItem(i, instanceRef); i++)
 							{
 								if (!instanceRef || instanceRef->formID == (*g_thePlayer)->formID)
 									continue;
@@ -281,22 +258,14 @@ void SkyUtility::Run()
 	}
 }
 
-void SkyUtility::GetInitialPlayerData(bool response)
+void SkyUtility::GetInitialPlayerData()
 {
 	string netData;
 
 	TESNPC* playerBase = DYNAMIC_CAST((*g_thePlayer)->baseForm, TESForm, TESNPC);
 
-	GameState::plState.sex = CALL_MEMBER_FN(playerBase, GetSex)();
-
-	if (GetWorldSpace(GameState::skyrimVMRegistry, 0, *g_thePlayer))
-		NetworkHandler::worldid = Utilities::GetFormIDString(GetWorldSpace(GameState::skyrimVMRegistry, 0, *g_thePlayer)->formID).substr(2, 6);
-
-	if (GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer))
-	{
-		NetworkHandler::locationid = Utilities::GetFormIDString(GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer)->formID).substr(2, 6)
-			+ NetworkHandler::worldid;
-	}
+	if (playerBase)
+		GameState::plState.sex = CALL_MEMBER_FN(playerBase, GetSex)();
 
 	if (NetworkHandler::myLoadOrder.empty())
 	{
@@ -373,7 +342,7 @@ void SkyUtility::GetInitialPlayerData(bool response)
 	//We should add the ammoId in here at some point
 	NetworkHandler::SendPlayerSpawn(GameState::plState.displayName, GameState::loadOrder, GameState::plState.fRaceId, GameState::plState.raceName, GameState::plState.sex, GameState::plState.weight, GameState::plState.fRightWeaponId, GameState::plState.fLeftWeaponId, GameState::plState.fHeadArmorId,
 	                              GameState::plState.fHairTypeId, GameState::plState.fHairLongId, GameState::plState.fBodyArmorId, GameState::plState.fHandsArmorId, GameState::plState.fForeArmArmorId, GameState::plState.fAmuletArmorId, GameState::plState.fRingArmorId, GameState::plState.fFeetArmorId, GameState::plState.fCalvesArmorId, GameState::plState.fShieldArmorId, GameState::plState.fCircletArmorId, GameState::plState.fMouthId,
-	                              GameState::plState.fHeadId, GameState::plState.fEyesId, GameState::plState.fHairId, GameState::plState.fBeardId, GameState::plState.fScarId, GameState::plState.fBrowId, GameState::plState.height, GameState::plState.fFaceset, GameState::plState.fHairColor, GameState::plState.fVoiceId, response);
+	                              GameState::plState.fHeadId, GameState::plState.fEyesId, GameState::plState.fHairId, GameState::plState.fBeardId, GameState::plState.fScarId, GameState::plState.fBrowId, GameState::plState.height, GameState::plState.fFaceset, GameState::plState.fHairColor, GameState::plState.fVoiceId);
 
 	GameState::plState.av.skOneHanded = NativeFunctions::GetAV(*g_thePlayer, "OneHanded");
 	GameState::plState.av.skTwoHanded = NativeFunctions::GetAV(*g_thePlayer, "TwoHanded");
@@ -438,29 +407,33 @@ void SkyUtility::GetInitialPlayerData(bool response)
 
 void SkyUtility::RefreshLocation()
 {
-	NetworkHandler::PlayerCurrentLocation = GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer);
-	TESWorldSpace* plRefreshWorldspace = GetWorldSpace(GameState::skyrimVMRegistry, 0, *g_thePlayer);
-
-	if (NetworkHandler::PlayerCurrentLocation)
-		tempLoc = Utilities::GetFormIDString(NetworkHandler::PlayerCurrentLocation->formID).substr(2, 6);
-
-	if (plRefreshWorldspace)
-		NetworkHandler::worldid = Utilities::GetFormIDString(plRefreshWorldspace->formID).substr(2, 6);
-
-	if (tempLoc != "" && tempLoc + NetworkHandler::worldid != NetworkHandler::locationid)
+	if (GameState::IsRefreshing)
 	{
-		NetworkHandler::locationid = tempLoc + NetworkHandler::worldid;
+		GameState::plState.currentWorldspace = CALL_MEMBER_FN(*g_thePlayer, GetWorldspace)();
+		GameState::plState.currentLocation = GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer);
 
-		if (NetworkState::bIsConnected)
-			NetworkHandler::locationEntryTime = NetworkHandler::lastTimeReference;
+		NetworkState::locationId = (GameState::plState.currentWorldspace ? FormID(GameState::plState.currentWorldspace->formID).getId() : 0) +
+			(GameState::plState.currentLocation ? FormID(GameState::plState.currentLocation->formID).getId() : 0);
 
 		//Re-enable any npc's that may have gotten disabled in the previous area, by the networking.
 		NetworkHandler::RestoreLocalNpcs();
 
 		//We're moving to a new location, clear out our current npc list
 		NetworkHandler::LocalNpcMap.clear();
-		NetworkHandler::clearRemoteNpcs = true;
 		NetworkHandler::fullRefresh = true;
+
+		if (!Networking::instance->leaveRoom())
+		{
+			if (!NetworkHandler::HasInitialized)
+				Networking::instance->changeRoom(to_string(NetworkState::locationId).c_str());
+			else
+			{
+				if (Networking::instance->getState() != State::STATE_LEAVING || Networking::instance->getState() != State::STATE_LEFT)
+					return;
+			}
+		}
+
+		GameState::IsRefreshing = false;
 	}
 }
 
@@ -810,6 +783,7 @@ void SkyUtility::UpdateCheck()
 	newX = (*g_thePlayer)->pos.x;
 	newY = (*g_thePlayer)->pos.y;
 	newZ = (*g_thePlayer)->pos.z;
+	
 	rNewX = GetAngleX(GameState::skyrimVMRegistry, 23000, *g_thePlayer);
 	rNewY = GetAngleY(GameState::skyrimVMRegistry, 23000, *g_thePlayer);
 	rNewZ = GetAngleZ(GameState::skyrimVMRegistry, 23000, *g_thePlayer);
@@ -962,6 +936,9 @@ void SkyUtility::Connect()
 
 void SkyUtility::PlayerKOFA(StaticFunctionTag* base, Actor* target, UInt32 positionSelection)
 {
+	if (!target)
+		return;
+
 	((ActorEx*)target)->KeepOffsetFromActor(NetworkHandler::RemotePlayerMap[positionSelection].positionControllerActor, 0, 0, 0, 0, 0, 0, 128, 20);
 }
 
@@ -1144,12 +1121,18 @@ void SkyUtility::SetINIStringEx(StaticFunctionTag* base, BSFixedString iniName, 
 
 void SkyUtility::EquipItem(StaticFunctionTag* base, Actor* ref, TESForm* item, UInt32 slot)
 {
+	if (!ref || !item)
+		return;
+
 	NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(item->formID) + " 1 " + (slot == 0 ? "left" : "right")).c_str(), ref);
 }
 
 void SkyUtility::SetTransform(StaticFunctionTag* base, BSFixedString ref, UInt32 x, UInt32 y, UInt32 z, UInt32 xRot, UInt32 yRot, UInt32 zRot)
 {
 	TESObjectREFR* target = (TESObjectREFR*)LookupFormByID(strtoul(ref.data, nullptr, 0));
+
+	if (!target)
+		return;
 
 	NativeFunctions::ExecuteCommand(((string)"SetPos X " + to_string(x)).c_str(), target);
 	NativeFunctions::ExecuteCommand(((string)"SetPos Y " + to_string(y)).c_str(), target);
@@ -1163,6 +1146,9 @@ void SkyUtility::SetTransform(StaticFunctionTag* base, BSFixedString ref, UInt32
 //Calls enable net after ensuring that the actor cannot be disabled by npc checks.
 void SkyUtility::EnableNetPlayer(StaticFunctionTag* base, Actor* target)
 {
+	if (!target)
+		return;
+
 	if (std::find(NetworkHandler::playerLookup.begin(), NetworkHandler::playerLookup.end(), target->formID) == NetworkHandler::playerLookup.end())
 		NetworkHandler::playerLookup.push_back(target->formID);
 	NetworkHandler::EnableNet(target);

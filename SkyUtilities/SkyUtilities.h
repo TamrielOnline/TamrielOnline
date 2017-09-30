@@ -18,10 +18,10 @@ class SkyUtility
 {
 private:
 	map<string, vector<string> >* consoleMap;
-	string lastCommandEntered { "" }, tempLoc { "" };
+	string lastCommandEntered { "" };
 	TESQuest* mainQuest { nullptr };
 	bool completeInitA { false }, completeInitB { false };
-	bool InitialPosition { true }, bowStart { false };
+	bool InitialPosition { true }, bowStart { false }, npcEnabled;
 	BYTE clientKey;
 	TESObjectREFR* refHolder { nullptr };
 	Timer periodicTimeCheckUtilities, positionTimer, inactivityTimer, connectTimer, databaseTimer, npcTimer, questTimer, cellTimer, lockTimer;
@@ -49,6 +49,7 @@ public:
 	static void DisableNet(StaticFunctionTag* base, Actor* target);
 	static void OnConnected();
 	static void OnDisconnected();
+	static void OnRoomEnter();
 	static void OnKeyEvent(BYTE key);
 	static void ReceiveEvent(const int playerNr, const nByte eventCode, const Object& eventContent);
 
@@ -67,6 +68,6 @@ public:
 	void UpdateCheck();
 	void RefreshLocation();
 	void Connect();
-	void GetInitialPlayerData(bool response = false);
+	void GetInitialPlayerData();
 	void Run();
 };

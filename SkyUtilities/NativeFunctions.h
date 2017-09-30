@@ -12,6 +12,7 @@
 #include "skse/PapyrusArgs.h"
 #include "skse/PapyrusNativeFunctions.h"
 #include "skse/PapyrusForm.h"
+#include "skse/GameExtraData.h"
 
 //SAMPLE - KeepOffsetFromActor((*g_skyrimVM)->GetClassRegistry(), 0, *g_thePlayer, *g_thePlayer, 0, 0, 0, 0, 0, 0, 500, 20);
 typedef void(*_KeepOffsetFromActor)(const VMClassRegistry* registry, const UInt32 stackId, Actor* target, const Actor* arTarget,

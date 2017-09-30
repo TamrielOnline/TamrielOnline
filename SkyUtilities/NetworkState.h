@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <string>
+#include "Common-cpp\inc\defines.h"
 
 using namespace std;
 
@@ -15,13 +16,12 @@ public:
 		ID_MESSAGE,
 		ID_SPAWN_PLAYER,
 		ID_POSITION_UPDATE,
-		ID_SPAWN_PLAYER_RESPONSE, //Used to prevent an endless loop of player spawnings
+		ID_DEBUG,
 		ID_SET_TIME,
 		ID_SET_WEATHER,
 		ID_SET_ANIMATION,
 		ID_NPC_UPDATE,
-		ID_LOCK_UPDATE,
-		ID_DEBUG
+		ID_LOCK_UPDATE
 	};
 
 	enum CHANNEL
@@ -33,6 +33,7 @@ public:
 
 	static bool bIsConnected;
 	static vector<int> vConnectionList;
+	static SInt32 locationId;
 
 	static void(*OnConnectedToServer)();
 	static void(*OnDisconnectedFromServer)();

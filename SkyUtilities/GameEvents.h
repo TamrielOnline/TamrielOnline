@@ -151,7 +151,7 @@ public:
 	static Actor* loadedActor;
 	static Timer npcListTimer, regularTimer, animationTimer; //npcListTimer - Determines how long we'll initially be grabbing npcs.
 
-	//For testing unknown events.
+	//For testing startup unknown events.
 	class TESGenericEventHandler : public BSTEventSink <TESGenericEvent>
 	{
 	public:
@@ -170,7 +170,6 @@ public:
 		EventResult	ReceiveEvent(TESOpenCloseEvent * evn, EventDispatcher<TESOpenCloseEvent> * dispatcher)
 		{
 			SkyUtility::instance->Run();
-
 			return EventResult::kEvent_Continue;
 		}
 	};
@@ -181,7 +180,6 @@ public:
 		EventResult	ReceiveEvent(TESQuestStageEvent * evn, EventDispatcher<TESQuestStageEvent> * dispatcher)
 		{
 			SkyUtility::instance->Run();
-
 			return EventResult::kEvent_Continue;
 		}
 	};
@@ -426,7 +424,6 @@ public:
 
 			if (firstNpcRequest)
 			{
-				NetworkHandler::PlayerCurrentLocation = GetCurrentLocation(GameState::skyrimVMRegistry, 0, *g_thePlayer);
 				firstNpcRequest = false;
 				npcListTimer.StartTimer();
 
@@ -554,14 +551,20 @@ public:
 			else
 			{
 				if (loadingMenuOpen && !papyrusUI::IsMenuOpen(nullptr, "Loading Menu"))
+				{
+					GameState::IsRefreshing = true;
 					loadingMenuOpen = false;
+				}
 				else if (mistMenuOpen && !papyrusUI::IsMenuOpen(nullptr, "Mist Menu"))
+				{
+					GameState::IsRefreshing = true;
 					mistMenuOpen = false;
+				}
 
 				//Only refresh if we've already populated our master list, a loading menu was open, and is now closed.
 				if (!loadingMenuOpen && !mistMenuOpen && GameState::IsLoading)
 				{
-					SkyUtility::instance->RefreshLocation();
+					GameState::IsRefreshing = true;
 					GameState::IsLoading = false;
 				}
 			}

@@ -36,13 +36,13 @@ struct FormID
 {
 	FormID(UInt32 refId)
 	{
-		memcpy(&formId, &refId, 3);
+		formId = refId - ((refId / 0x01000000) * 0x01000000);
 		modId = refId - formId;
 	}
 
 	FormID(UInt32 refId, int playerNr)
 	{
-		memcpy(&formId, &refId, 3);
+		formId = refId - ((refId / 0x01000000) * 0x01000000);
 		modId = refId - formId;
 		modId = (modIdMap[playerNr].count(modId) > 0 ? modIdMap[playerNr][modId] : modId);
 	}
@@ -76,7 +76,7 @@ struct FormID
 	//Change the formId without changing the modId
 	void setFormId(UInt32 newFormId)
 	{
-		memcpy(&formId, &newFormId, 3);
+		formId = newFormId - ((newFormId / 0x01000000) * 0x01000000);
 	}
 
 	UInt32 convertFull(int playerNr)
@@ -118,17 +118,17 @@ public:
 	bool disabled, isDead, isFlying, inCombat, sitting, remotePlayer, bleedingOut, isArrested, isBribed, isAlarmed, isTeammate, isSneaking, isUnconscious;
 	int x, y, z;
 	float xRot, yRot, zRot, height, jumpZOrigin;
-	float locationEntryTime;
 	UInt32 formId, baseId, combatTarget, sitType, positionControllerFormId, targetControllerFormId;
 	TESObjectCELL* lastCell;
 	ActorEx *positionControllerActor, *actor;
 	TESObjectREFR *targetController, *mount, *object, *positionController;
 	bool isMounted, leftAttack, rightAttack, jump, alert, firstUpdate, equippedSpell, forceTeleport, spawned;
-	string location, sitTarget, name, lastLocation, sitState, sitAnim;
+	string sitTarget, name, lastLocation, sitState, sitAnim;
+	int64 location;
 
 	PlayerData() = default;
 
-	PlayerData(string loc, UInt32 id) : networkId(id), location(loc){}
+	PlayerData(int64 loc, UInt32 id) : networkId(id), location(loc){}
 
 	//0 (x), 1 (y), 2 (z)
 	float GetRawRot(int id)
@@ -153,6 +153,9 @@ public:
 
 	Hashtable Serialize()
 	{
+		if (!actor)
+			actor = (ActorEx*)DYNAMIC_CAST(LookupFormByID(formId), TESForm, Actor);
+
 		Hashtable serializedData = Hashtable();
 
 		serializedData.put<JString, int>("x", actor->pos.x);
@@ -257,17 +260,14 @@ public:
 	// Manages how often NPCs update to limit crashing from overly frequent calls.
 	static map<UInt32, Timer> KOFATimers;
 	// Signal for the remoteNpcs to be cleared on the next update.
-	static bool clearRemoteNpcs, fullRefresh;
+	static bool fullRefresh;
 
 	// ignoreSpawn - Temporarily disable "PreventingUnauthorizedSpawn" for the player.
 	static bool ignoreSpawns;
 	// dropTimer - Used to prevent item drop glitches.
 	static Timer dropTimer;
 
-	static BGSLocation* PlayerCurrentLocation;
 	static bool HasInitialized;
-	// The ids of the current location, and worldspace.
-	static string locationid, worldid;
 	/* Locks are updated over the network in intervals. This is a list of all of the locks that have changed state since the last interval. */
 	static vector<LockData> lockList;
 	/* Determines how many lock/unlock events should we be ignoring from this lock. This is so that we don't get infinite locking/unlocking triggers. */
@@ -276,10 +276,6 @@ public:
 	and used to compare mods. When the same mods are found their prefixes (00-FF) are mapped to our local list. */
 	static vector<string> myLoadOrder;
 	static Timer receivedTime, dayTimer;
-	/* The time at the last update interval. The value of the global variable "GameDaysPassed" is used as the time reference, and is updated every ~1 sec */
-	static float lastTimeReference;
-	// The time we entered the current location. This value isn't realtime, it's assigned the most recent "lastTimeReference".
-	static float locationEntryTime;
 
 	//Used for both the debug console, and in-game display
 	inline static void PrintNote(const char* message)
@@ -290,21 +286,29 @@ public:
 
 	inline static void DisableRemoteNpcs()
 	{
+		ActorEx* actor = NULL;
 		for (map<UInt32, PlayerData>::iterator it = RemoteNpcMap.begin(); it != RemoteNpcMap.end(); ++it)
 		{
-			if (it->second.actor)
-				it->second.actor->ClearKeepOffsetFromActor();
-			NativeFunctions::ExecuteCommand("Disable 0", it->second.positionController);
+			actor = (ActorEx*)DYNAMIC_CAST(LookupFormByID(it->second.formId), TESForm, Actor);
+
+			if (actor)
+				actor->ClearKeepOffsetFromActor();
 		}
 	}
 
 	inline static bool IsEnabled(Actor* ref)
 	{
+		if (!ref)
+			return false;
+
 		return !IsDisabled(GameState::skyrimVMRegistry, 0, ref);
 	}
 
 	inline static bool DisableNet(Actor* ref)
 	{
+		if (!ref)
+			return false;
+
 		if (IsEnabled(ref))
 		{
 			NativeFunctions::ExecuteCommand("Disable 0", ref);
@@ -320,6 +324,9 @@ public:
 
 	inline static bool EnableNet(Actor* ref)
 	{
+		if (!ref)
+			return false;
+
 		if (!IsEnabled(ref))
 		{
 			NativeFunctions::ExecuteCommand("Enable 0", ref);
@@ -344,7 +351,9 @@ public:
 		for (map<UInt32, PlayerData>::iterator it = LocalNpcMap.begin(); it != LocalNpcMap.end(); ++it)
 		{
 			actor = DYNAMIC_CAST(LookupFormByID(it->first), TESForm, Actor);
-			NativeFunctions::ExecuteCommand("ResetAI", actor);
+
+			if (actor)
+				NativeFunctions::ExecuteCommand("ResetAI", actor);
 		}
 	}
 
@@ -352,7 +361,6 @@ public:
 	{
 		DisableRemoteNpcs();
 		RestoreLocalNpcs();
-		RemoteNpcMap.clear();
 		modIdMap.clear();
 		papyrusQueue = queue<PapyrusData>();
 		RemoteNpcUpdates = queue<pair<int, PlayerData>>();
@@ -366,8 +374,6 @@ public:
 
 		HasInitialized = false;
 		locationMaster = false;
-		NetworkHandler::locationEntryTime = INT_MAX;
-		NetworkHandler::lastTimeReference = INT_MAX;
 	}
 
 	inline static void OnDisconnection()
@@ -407,6 +413,9 @@ public:
 		{
 			if (npcId.isInstanced())
 			{
+				if (!npcBaseForm)
+					return;
+
 				RemoteNpcMap[npcRefId].object = PlaceAtMe_Native(GameState::skyrimVMRegistry, 0, positionRef, npcBaseForm, 1, true, false);
 				RemoteNpcMap[npcRefId].actor = (ActorEx*)LookupFormByID(RemoteNpcMap[npcRefId].object->formID);
 			}
@@ -426,7 +435,7 @@ public:
 				}
 
 				NativeFunctions::ExecuteCommand("Resurrect 1", RemoteNpcMap[npcRefId].object); // For stubborn NPCs that don't want to return.
-				RemoteNpcMap[npcRefId].actor = (ActorEx*)LookupFormByID(RemoteNpcMap[npcRefId].object->formID);
+				RemoteNpcMap[npcRefId].actor = (ActorEx*)DYNAMIC_CAST(LookupFormByID(RemoteNpcMap[npcRefId].object->formID), TESForm, Actor);
 			}
 		}
 
@@ -436,7 +445,7 @@ public:
 			if (npcBaseForm)
 			{
 				RemoteNpcMap[npcRefId].object = PlaceAtMe_Native(GameState::skyrimVMRegistry, 0, positionRef, npcBaseForm, 1, true, false);
-				RemoteNpcMap[npcRefId].actor = (ActorEx*)LookupFormByID(RemoteNpcMap[npcRefId].object->formID);
+				RemoteNpcMap[npcRefId].actor = (ActorEx*)DYNAMIC_CAST(RemoteNpcMap[npcRefId].object, TESObjectREFR, Actor);
 			}
 			else
 				NativeFunctions::ExecuteCommand("Disable 0", positionRef);
@@ -459,17 +468,18 @@ public:
 		NativeFunctions::ExecuteCommand("sgv bHeadTrackSpine 0", RemoteNpcMap[npcRefId].actor);
 
 		RemoteNpcMap[npcRefId].formId = npcRefId;
-		RemoteNpcMap[npcRefId].positionController = positionRef;
-		RemoteNpcMap[npcRefId].positionControllerActor = (ActorEx*)LookupFormByID(positionRef->formID);
-		RemoteNpcMap[npcRefId].networkId = remoteNpc.formId;
+		RemoteNpcMap[npcRefId].positionControllerFormId = positionRef->formID;
 		RemoteNpcMap[npcRefId].spawned = true;
 
-		KOFA(RemoteNpcMap[npcRefId].actor, RemoteNpcMap[npcRefId].positionControllerActor, true);
+		KOFA(RemoteNpcMap[npcRefId].actor, positionRef, true);
 	}
 
 	// This will push the message onto a queue for papyrus to call.
 	inline static void PushToSkyrim(string msg, UInt32 tGuid, TESObjectREFR* target)
 	{
+		if (!target)
+			return;
+
 		std::lock_guard<std::mutex> lock(papyrus_mtx);
 		papyrusQueue.emplace(PapyrusData(msg, tGuid, target->formID, VMResultArray<BSFixedString>()));
 	}
@@ -477,6 +487,9 @@ public:
 	// This will push the message onto a queue for papyrus to call, along with any additional parameters.
 	inline static void PushToSkyrim(string msg, UInt32 tGuid, TESObjectREFR* target, vector<string> values)
 	{
+		if (!target)
+			return;
+
 		VMResultArray<BSFixedString> tArray;
 
 		for (int i = 0; i < values.size(); i++)
@@ -565,6 +578,9 @@ public:
 
 	inline static bool AddLocalNpcList(Actor* tActor)
 	{
+		if (!tActor)
+			return false;
+
 		//Ensure that the npc is not already in the list.
 		if (LocalNpcMap.count(tActor->formID) == 1)
 			return false;
@@ -588,7 +604,7 @@ public:
 		LocalNpcMap[tActor->formID].formId = tActor->formID;
 		LocalNpcMap[tActor->formID].baseId = tActor->baseForm->formID;
 		LocalNpcMap[tActor->formID].object = tActor;
-		LocalNpcMap[tActor->formID].location = locationid;
+		LocalNpcMap[tActor->formID].location = NetworkState::locationId;
 		LocalNpcMap[tActor->formID].remotePlayer = false;
 		LocalNpcMap[tActor->formID].actor = (ActorEx*)tActor;
 		LocalNpcMap[tActor->formID].alert = false;
@@ -602,7 +618,7 @@ public:
 
 	inline static bool IsLocationMaster()
 	{
-		return locationMaster;
+		return Networking::instance->getIsHost();
 	}
 
 	inline static bool IsPlayer(UInt32 formId)
@@ -615,6 +631,7 @@ public:
 	// When a player disconnects, disable them, and move their Actor to a holding area.
 	inline static void OnExit(int playerNr)
 	{
+		RemotePlayerMap[playerNr].disabled = true;
 		DisableNet(RemotePlayerMap[playerNr].actor);
 		MoveTo(GameState::skyrimVMRegistry, 0, RemotePlayerMap[playerNr].actor, (TESObjectREFR*)LookupFormByID(ID_TESObjectREFR::E3demoMarker), 0, 0, 0, true);
 		NativeFunctions::ExecuteCommand("APS SkyTools DisableTracking", RemotePlayerMap[playerNr].actor);
@@ -646,7 +663,6 @@ public:
 		RemotePlayerMap[bUser].firstUpdate = true;
 		RemotePlayerMap[bUser].alert = false;
 		RemotePlayerMap[bUser].sitType = 0;
-		RemotePlayerMap[bUser].locationEntryTime = INT_MIN;
 
 		// These values cannot be set in papyrus, they lead to errors.
 		NativeFunctions::ExecuteCommand("forceav Confidence 4", RemotePlayerMap[bUser].actor);
@@ -676,6 +692,9 @@ public:
 	/* Disable the NPC if its not in the list that the location master sent us. If we are the location master, ignore it. */
 	inline static bool PreventingUnauthorizedSpawn(TESObjectREFR* obj)
 	{
+		if (!obj)
+			return false;
+
 		if (!IsLocationMaster())
 		{
 			if (!IsPlayer(obj->formID) && IsConnected() && !ignoreSpawns && obj->loadedState)
@@ -699,12 +718,15 @@ public:
 	// Add the actor to the local NPC list, and reset its AI so that it can move freely.
 	inline static void UpdateLocalNpcList(Actor* actor)
 	{
-		if (actor->loadedState && NetworkHandler::AddLocalNpcList(actor))
+		if (actor && actor->loadedState && NetworkHandler::AddLocalNpcList(actor))
 			NativeFunctions::ExecuteCommand("ResetAI", actor);
 	}
 
 	inline static bool DistanceExceeded(TESObjectREFR* source, TESObjectREFR* target, float distance)
 	{
+		if (!source || !target)
+			return true;
+
 		return (abs(target->pos.x - source->pos.x) + abs(target->pos.y - source->pos.y) + abs(target->pos.z - source->pos.z)) > distance;
 	}
 
@@ -719,7 +741,13 @@ public:
 			return;
 		}
 
-		if (RemoteNpcMap[npcNum].actor->pos.x != tNpc.x || RemoteNpcMap[npcNum].actor->pos.y != tNpc.y || RemoteNpcMap[npcNum].actor->pos.z != tNpc.z)
+		Actor *actor = DYNAMIC_CAST(LookupFormByID(RemoteNpcMap[npcNum].formId), TESForm, Actor),
+			*cActor = (Actor*)DYNAMIC_CAST(LookupFormByID(RemoteNpcMap[npcNum].positionControllerFormId), TESForm, TESObjectREFR);
+
+		if (!actor || !cActor)
+			return;
+
+		if (actor->pos.x != tNpc.x || actor->pos.y != tNpc.y || actor->pos.z != tNpc.z)
 		{
 			/* Get the difference between our last update and this update
 			and extrapolate (albeit simply) to our next predicted position. 
@@ -732,34 +760,34 @@ public:
 			RemoteNpcMap[npcNum].y = tNpc.y;
 			RemoteNpcMap[npcNum].z = tNpc.z;
 
-			NativeFunctions::ExecuteCommand(("SetPos x " + to_string(interX)).c_str(), RemoteNpcMap[npcNum].positionController);
-			NativeFunctions::ExecuteCommand(("SetPos y " + to_string(interY)).c_str(), RemoteNpcMap[npcNum].positionController);
-			NativeFunctions::ExecuteCommand(("SetPos z " + to_string(interZ)).c_str(), RemoteNpcMap[npcNum].positionController);
+			NativeFunctions::ExecuteCommand(("SetPos x " + to_string(interX)).c_str(), cActor);
+			NativeFunctions::ExecuteCommand(("SetPos y " + to_string(interY)).c_str(), cActor);
+			NativeFunctions::ExecuteCommand(("SetPos z " + to_string(interZ)).c_str(), cActor);
 
-			if (DistanceExceeded(RemoteNpcMap[npcNum].object, RemoteNpcMap[npcNum].positionController, 512))
+			if (DistanceExceeded(actor, cActor, 512))
 			{
-				NativeFunctions::ExecuteCommand(((string)"MoveTo " + Utilities::GetFormIDString(RemoteNpcMap[npcNum].positionController->formID) + " 0 0 0").c_str(), RemoteNpcMap[npcNum].object);
-				KOFA(RemoteNpcMap[npcNum].actor, RemoteNpcMap[npcNum].positionControllerActor, true);
+				NativeFunctions::ExecuteCommand(((string)"MoveTo " + Utilities::GetFormIDString(cActor->formID) + " 0 0 0").c_str(), actor);
+				KOFA(actor, cActor, true);
 			}
 			else
-				KOFA(RemoteNpcMap[npcNum].actor, RemoteNpcMap[npcNum].positionControllerActor, true);
+				KOFA(actor, cActor, true);
 		}
 
 		if (RemoteNpcMap[npcNum].xRot != tNpc.xRot)
 		{
-			NativeFunctions::ExecuteCommand(("SetAngle x " + to_string(tNpc.xRot)).c_str(), RemoteNpcMap[npcNum].object);
+			NativeFunctions::ExecuteCommand(("SetAngle x " + to_string(tNpc.xRot)).c_str(), actor);
 			RemoteNpcMap[npcNum].xRot = tNpc.xRot;
 		}
 
 		if (tNpc.yRot != -10000000)
 		{
-			NativeFunctions::ExecuteCommand(("SetAngle y " + to_string(tNpc.yRot)).c_str(), RemoteNpcMap[npcNum].object);
+			NativeFunctions::ExecuteCommand(("SetAngle y " + to_string(tNpc.yRot)).c_str(), actor);
 			RemoteNpcMap[npcNum].yRot = tNpc.yRot;
 		}
 
 		if (tNpc.zRot != -10000000)
 		{
-			NativeFunctions::ExecuteCommand(("SetAngle z " + to_string(tNpc.zRot)).c_str(), RemoteNpcMap[npcNum].object);
+			NativeFunctions::ExecuteCommand(("SetAngle z " + to_string(tNpc.zRot)).c_str(), actor);
 			RemoteNpcMap[npcNum].zRot = tNpc.zRot;
 		}
 	}
@@ -812,24 +840,36 @@ public:
 	// Papyrus interface
 	inline static BSFixedString GetSitAnimation(StaticFunctionTag* base, Actor* ref)
 	{
+		if (!ref)
+			return "";
+
 		return BSFixedString(NativeFunctions::GetSitAnimation(ref));
 	}
 
 	// Papyrus interface
 	inline static void MountActor(StaticFunctionTag* base, Actor* ref, TESObjectREFR* mountRef)
 	{
+		if (!ref || !mountRef)
+			return;
+
 		NativeFunctions::ExecuteCommand(((string)"mountactor " + Utilities::GetFormIDString(mountRef->formID)).c_str(), ref);
 	}
 
 	// Papyrus interface
 	inline static void ResurrectExtended(StaticFunctionTag* base, Actor* ref)
 	{
+		if (!ref)
+			return;
+
 		NativeFunctions::ExecuteCommand("Resurrect 1", ref);
 	}
 
 	// Papyrus interface
 	inline static void SetRace(StaticFunctionTag* base, Actor* ref, BSFixedString raceName)
 	{
+		if (!ref)
+			return;
+
 		NativeFunctions::ExecuteCommand(((string)"SetRace " + raceName.data).c_str(), ref);
 	}
 
@@ -837,12 +877,18 @@ public:
 	We'll have to weigh the potential for exploitation. */
 	inline static void APS(StaticFunctionTag* base, Actor* ref, BSFixedString command)
 	{
+		if (!ref)
+			return;
+
 		NativeFunctions::ExecuteCommand(((string)"APS " + command.data).c_str(), ref);
 	}
 
 	// Papyrus interface
 	inline static void SetDisplayName(StaticFunctionTag* base, Actor* ref, BSFixedString dName)
 	{
+		if (!ref)
+			return;
+
 		NativeFunctions::SetDisplayName(ref, dName.data, true);
 	}
 
@@ -912,9 +958,9 @@ public:
 		if (normalizedName == "lastLocation")
 			return RemotePlayerMap[playerNr].lastLocation.c_str();
 		else if (normalizedName == "locationid")
-			return locationid.c_str();
+			return to_string(NetworkState::locationId).c_str();
 		else if (normalizedName == "location")
-			return RemotePlayerMap[playerNr].location.c_str();
+			return to_string(RemotePlayerMap[playerNr].location).c_str();
 		else if (normalizedName  == "sitAnim")
 			return RemotePlayerMap[playerNr].sitAnim.c_str();
 		else if (normalizedName == "horse")
@@ -1019,42 +1065,20 @@ public:
 		if (IsAlone())
 			return;
 
-		/* This selection is heavily dependent on synchronized game time, therefore unless we are the host
-		(the one sending the game time), then we need to wait until we receive the game time to continue. */
-		float lowestEntryTime = locationEntryTime;
-		int masterSelection = -1;
-
 		for (map<UInt32, PlayerData>::iterator it = NetworkHandler::RemotePlayerMap.begin(); it != NetworkHandler::RemotePlayerMap.end(); ++it)
 		{
 			if (IsSpawned(it->first))
 			{
-				if (it->second.location == NetworkHandler::locationid)
+				if (it->second.disabled)
 				{
-					if (it->second.locationEntryTime < lowestEntryTime)
-					{
-						masterSelection = it->first;
-						lowestEntryTime = it->second.locationEntryTime;
-					}
-
-					if (it->second.disabled)
-					{
-						EnableNet(it->second.actor);
-						it->second.disabled = false;
-						it->second.forceTeleport = true;
-					}
-				}
-				else
-				{
-					if (!it->second.disabled)
-					{
-						DisableNet(it->second.actor);
-						it->second.disabled = true;
-					}
+					EnableNet(it->second.actor);
+					it->second.disabled = false;
+					it->second.forceTeleport = true;
 				}
 			}
 		}
 
-		if (masterSelection == -1)
+		if (IsLocationMaster())
 		{
 			if (!locationMaster)
 			{
@@ -1092,6 +1116,9 @@ public:
 	// "KeepOffsetFromActor" with limits on how often its called, to prevent crashing.
 	inline static void KOFA(Actor* source, TESObjectREFR* target, bool npc = false)
 	{
+		if (!source || !target)
+			return;
+
 		if (KOFATimers[source->formID].HasMillisecondsPassed(250))
 		{
 			KOFATimers[source->formID].StartTimer();
@@ -1121,14 +1148,14 @@ public:
 			Tests::debug("ID_MESSAGE received.");
 		}
 
-		else if (eventCode == NetworkState::EV::ID_SPAWN_PLAYER || eventCode == NetworkState::EV::ID_SPAWN_PLAYER_RESPONSE)
+		else if (eventCode == NetworkState::EV::ID_SPAWN_PLAYER)
 		{
 			if (IsSpawned(playerNr))
 				return;
 
 			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
 			SpawnPlayer(playerNr, &hashData);
-			Tests::debug(eventCode == NetworkState::EV::ID_SPAWN_PLAYER ? "ID_SPAWN_PLAYER received" : "ID_SPAWN_PLAYER_RESPONSE received");
+			Tests::debug("ID_SPAWN_PLAYER received");
 		}
 
 		else if (eventCode == NetworkState::EV::ID_LOCK_UPDATE)
@@ -1154,14 +1181,6 @@ public:
 				xRot = ValueObject<int>(hashData.getValue(3)).getDataCopy(),
 				yRot = ValueObject<int>(hashData.getValue(4)).getDataCopy(),
 				zRot = ValueObject<int>(hashData.getValue(5)).getDataCopy();
-
-			string plLocation = ValueObject<JString>(hashData.getValue(6)).getDataCopy().UTF8Representation();
-			float newLocationEntryTime = ValueObject<float>(hashData.getValue(7)).getDataCopy();
-
-			//If the player has already spawned, update their location data. And unlock their movement.
-			RemotePlayerMap[playerNr].lastLocation = RemotePlayerMap[playerNr].location;
-			RemotePlayerMap[playerNr].location = plLocation.c_str();
-			RemotePlayerMap[playerNr].locationEntryTime = newLocationEntryTime;
 
 			OnLocationUpdate();
 
@@ -1286,21 +1305,17 @@ public:
 		{
 			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
 
-			lastTimeReference = (float)ValueObject<float>(hashData.getValue(0)).getDataCopy();
-			float tDay = (float)ValueObject<float>(hashData.getValue(1)).getDataCopy(),
+			float daysPassed = (float)ValueObject<float>(hashData.getValue(0)).getDataCopy(),
+				tDay = (float)ValueObject<float>(hashData.getValue(1)).getDataCopy(),
 				tHour = (float)ValueObject<float>(hashData.getValue(2)).getDataCopy(),
 				tMonth = (float)ValueObject<float>(hashData.getValue(3)).getDataCopy(),
 				tYear = (float)ValueObject<float>(hashData.getValue(4)).getDataCopy();
 
-			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed), lastTimeReference);
+			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed), daysPassed);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameHour), tHour);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDay), tDay);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameMonth), tMonth);
 			SetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameYear), tYear);
-
-			//If we are not the host, update our location entry time for the first time.
-			if (locationEntryTime == INT_MAX)
-				locationEntryTime = lastTimeReference;
 
 			Tests::debug("ID_SET_TIME received.");
 		}
@@ -1508,21 +1523,15 @@ public:
 		// The host is responsible for updating the game time of everyone connected.
 		if (Networking::instance->IsHost())
 		{
-			lastTimeReference = GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed));
-
 			ExitGames::Common::Hashtable jUserVar = Hashtable();
 
-			jUserVar.put<int, float>(0, lastTimeReference);
+			jUserVar.put<int, float>(0, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDaysPassed)));
 			jUserVar.put<int, float>(1, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameDay)));
 			jUserVar.put<int, float>(2, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameHour)));
 			jUserVar.put<int, float>(3, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameMonth)));
 			jUserVar.put<int, float>(4, GetValue(GameState::skyrimVMRegistry, 0, (TESGlobal*)LookupFormByID(ID_TESGlobal::GameYear)));
 
 			Networking::instance->sendEvent<Hashtable>(false, jUserVar, NetworkState::EV::ID_SET_TIME, NetworkState::CHANNEL::EVENT);
-
-			//If we are the host, update our location entry time for the first time.
-			if (locationEntryTime == INT_MAX)
-				locationEntryTime = lastTimeReference - 1;
 		}
 
 		// One user per area is responsible for updating other nearby users of the current weather.
@@ -1551,8 +1560,6 @@ public:
 		hashData.put<int, int>(3, xRot);
 		hashData.put<int, int>(4, yRot);
 		hashData.put<int, int>(5, zRot);
-		hashData.put<int, JString>(6, JString(locationid.c_str()));
-		hashData.put<int, float>(7, locationEntryTime);
 
 		Networking::instance->sendEvent<Hashtable>(false, hashData, NetworkState::EV::ID_POSITION_UPDATE, NetworkState::CHANNEL::EVENT);
 	}
@@ -1585,8 +1592,7 @@ public:
 	inline static void SendPlayerSpawn(string name, string lorder, UInt32 raceId, string raceName, UInt32 sex, UInt32 weight, UInt32 rightWeaponId, UInt32 leftWeaponId,
 		UInt32 headArmorId, UInt32 hairTypeId, UInt32 hairLongId, UInt32 bodyArmorId, UInt32 handsArmorId, UInt32 forearmArmorId, UInt32 amuletArmorId,
 		UInt32 ringArmorId, UInt32 feetArmorId, UInt32 calvesArmorId, UInt32 shieldArmorId, UInt32 circletArmorId, UInt32 mouthId, UInt32 headId,
-		UInt32 eyesId, UInt32 hairId, UInt32 beardId, UInt32 scarId, UInt32 browId, float height, UInt32 faceset, UInt32 hairColor, UInt32 voiceId,
-		bool response)
+		UInt32 eyesId, UInt32 hairId, UInt32 beardId, UInt32 scarId, UInt32 browId, float height, UInt32 faceset, UInt32 hairColor, UInt32 voiceId)
 	{
 		ExitGames::Common::Hashtable jUserVar = Hashtable();
 
@@ -1623,7 +1629,7 @@ public:
 		jUserVar.put<int, int64>(30, voiceId);
 
 		// This is supposed to be cached, but the cached version results in a crash....
-		Networking::instance->sendEvent<Hashtable>(true, jUserVar, (response ? NetworkState::EV::ID_SPAWN_PLAYER_RESPONSE : NetworkState::EV::ID_SPAWN_PLAYER), NetworkState::CHANNEL::EVENT);
+		Networking::instance->sendEventCached<Hashtable>(true, jUserVar, NetworkState::EV::ID_SPAWN_PLAYER, NetworkState::CHANNEL::EVENT);
 	}
 
 	private:
