@@ -25,7 +25,7 @@ private:
 	BYTE clientKey;
 	TESObjectREFR* refHolder { nullptr };
 	Timer periodicTimeCheckUtilities, positionTimer, inactivityTimer, connectTimer, databaseTimer, npcTimer, questTimer, cellTimer, lockTimer;
-	float newX, newY, newZ, rNewX, rNewY, rNewZ;
+	int newX, newY, newZ, rNewX, rNewY, rNewZ, activationId;
 
 public:
 	SkyUtility() = default;
@@ -50,7 +50,6 @@ public:
 	static void OnConnected();
 	static void OnDisconnected();
 	static void OnRoomEnter();
-	static void OnExit(int playerNr);
 	static void OnKeyEvent(BYTE key);
 	static void ReceiveEvent(const int playerNr, const nByte eventCode, const Object& eventContent);
 

@@ -684,6 +684,170 @@ Function SetWeather(Actor ref, string[] values)
     endif
 EndFunction
 
+Actor Function SpawnPlayer(Actor ref, string[] values) global
+    Form emptyBase = Game.GetForm(0x0008A91A) ; A generic item marker form
+    ActorBase playerBase = None
+    ObjectReference targetController = ref.PlaceAtMe(emptyBase, 1, true, false)
+    ObjectReference movementController = ref.PlaceAtMe(emptyBase, 1, true, false)
+
+    int raceId = values[0] as int
+    int sex = values[1] as int
+    string raceName = values[2]
+    ; values[3] - values[16] { 3 - rightWeaponId, 4 - leftWeaponId, 5 - headArmorId, 6 - hairTypeId, 7 - hairLongId, 8 - bodyArmorId, 9 - handsArmorId, 10 - forearmArmorId, 11 - amuletArmorId,
+    ; 12 - ringArmorId, 13 - feetArmorId, 14 - calvesArmorId, 15 - shieldArmorId, 16 - circletArmorId }
+    ; values[17] - values[29] { 17 - mouthId, 18 - headId, 19 - eyesId, 20 - hairId, 21 - beardId, 22 - scarId, 23 - browId, 24 - height, 25 - faceset, 26 - hairColor, 27 - voiceId, 28 - weight, 29 - displayName}
+    string guid = values[30]
+
+    bool setRaceDirect = false
+    if raceId == 79683 || raceId == 559168 ; High Elves
+        if sex == 1
+            playerBase = Game.GetForm(0x00079BED) as ActorBase
+        else
+            playerBase = Game.GetForm(0x0005EF9C) as ActorBase
+        endif
+    elseif raceId == 79680 || raceId == 559162 ; Argonians
+        if sex == 1
+            playerBase = Game.GetForm(0x000B2E11) as ActorBase
+        else
+            playerBase = Game.GetForm(0x00043E57) as ActorBase
+        endif
+    elseif raceId == 79689 || raceId == 559236 ; Wood Elves
+        if sex == 1
+            playerBase = Game.GetForm(0x00079CD3) as ActorBase
+        else
+            playerBase = Game.GetForm(0x0005EF9A) as ActorBase
+        endif
+    elseif raceId == 79681 || raceId == 559164 ; Bretons
+        if sex == 1
+            playerBase = Game.GetForm(0x00079F65) as ActorBase
+        else
+            playerBase = Game.GetForm(0x00079F6A) as ActorBase
+        endif
+    elseif raceId == 79682 || raceId == 559165 ; Dark Elves
+        if sex == 1
+            playerBase = Game.GetForm(0x00079F5B) as ActorBase
+        else
+            playerBase = Game.GetForm(0x0005EFA7) as ActorBase
+        endif
+    elseif raceId == 79684 || raceId == 559172 ; Imperials
+        if sex == 1
+            playerBase = Game.GetForm(0x00079F66) as ActorBase
+        else
+            playerBase = Game.GetForm(0x00026921) as ActorBase
+        endif
+    elseif raceId == 79685 || raceId == 559173 ; Khajiit
+        if sex == 1
+            playerBase = Game.GetForm(0x000EE856) as ActorBase
+        else
+            playerBase = Game.GetForm(0x00043E59) as ActorBase
+        endif
+    elseif raceId == 79686 || raceId == 558996 ; Nords
+        if sex == 1
+            playerBase = Game.GetForm(0x00079F68) as ActorBase
+        else
+            playerBase = Game.GetForm(0x0001750C) as ActorBase
+        endif
+    elseif raceId == 79687 || raceId == 688825 ; Orcs
+        if sex == 1
+            playerBase = Game.GetForm(0x00079F4E) as ActorBase
+        else
+            playerBase = Game.GetForm(0x00079F69) as ActorBase
+        endif
+    elseif raceId == 79688 || raceId == 559174 ; Redguard
+        if sex == 1
+            playerBase = Game.GetForm(0x00079F67) as ActorBase
+        else
+            playerBase = Game.GetForm(0x0005B4F8) as ActorBase
+        endif
+    else ; Custom races, animals, monsters, etc...
+        playerBase = Game.GetForm(0x00079F67) as ActorBase ; The race will be changed after the character is spawned
+        setRaceDirect = true
+    endif
+
+    playerBase.SetInvulnerable(true)
+    playerBase.SetHeight(values[24] as float)
+    playerBase.SetFaceTextureSet(Game.GetForm(values[25] as int) as TextureSet)
+    playerBase.SetHairColor(Game.GetForm(values[26] as int) as ColorForm)
+    playerBase.SetVoiceType(Game.GetForm(values[27] as int) as VoiceType)
+    movementController.SetPosition(ref.GetPositionX(), ref.GetPositionY() - 2000, ref.GetPositionZ())
+
+    Actor newPlayer = movementController.PlaceAtMe(playerBase as Form, 1, true, false) as Actor
+    SkyUtilitiesScript.EnableNet(newPlayer)
+
+    if setRaceDirect == true
+        SkyUtilitiesScript.SetRace(newPlayer, raceName) ; This should call the console version. Probably can be replaced with the papyrus version if we send the race's formId.
+    endif
+
+    newPlayer.IgnoreFriendlyHits(true)
+    newPlayer.SetRelationshipRank(ref, 1)
+    SkyUtilitiesScript.APS(newPlayer, "SkyTools InitiateTracking")
+    newPlayer.RemoveAllItems()
+    SkyUtilitiesScript.SetDisplayName(newPlayer, values[29])
+    SkyUtilitiesScript.SetRemotePlayerDataString(guid as int, "name", values[29])
+    newPlayer.ChangeHeadPart(Game.GetForm(values[17] as int) as HeadPart)
+    newPlayer.ChangeHeadPart(Game.GetForm(values[18] as int) as HeadPart)
+    newPlayer.ChangeHeadPart(Game.GetForm(values[19] as int) as HeadPart)
+    newPlayer.ChangeHeadPart(Game.GetForm(values[20] as int) as HeadPart)
+    newPlayer.ChangeHeadPart(Game.GetForm(values[21] as int) as HeadPart)
+    newPlayer.ChangeHeadPart(Game.GetForm(values[22] as int) as HeadPart)
+    newPlayer.ChangeHeadPart(Game.GetForm(values[23] as int) as HeadPart)
+    newPlayer.QueueNiNodeUpdate()
+
+    Form rawEquip = Game.GetForm(values[3] as int)
+
+    if rawEquip != None
+        if rawEquip.GetType() == 41
+            SkyUtilitiesScript.EquipItem(newPlayer, rawEquip, 1)
+        elseif rawEquip.GetType() == 22
+            newPlayer.EquipSpell(rawEquip as Spell, 1)
+        endif
+    endif
+
+    rawEquip = Game.GetForm(values[4] as int)
+
+    if rawEquip != None
+        if rawEquip.GetType() == 41
+            SkyUtilitiesScript.EquipItem(newPlayer, rawEquip, 0)
+        elseif rawEquip.GetType() == 22
+            newPlayer.EquipSpell(rawEquip as Spell, 0)
+        endif
+    endif
+
+    int count = 5
+
+    while count < 17
+        rawEquip = Game.GetForm(values[count] as int)
+        if rawEquip != None
+            newPlayer.EquipItem(rawEquip, true, false)
+        endif
+        count += 1
+    endwhile
+
+    newPlayer.SetRestrained(true)
+    newPlayer.MoveTo(newPlayer, 0, 0, 0, true) ; Releases the player's movement
+    newPlayer.ForceAV("Blindness", 10000000000000)
+    newPlayer.ForceAV("ShoutRecoveryMult", 0)
+    newPlayer.ForceAV("VoiceRate", 10000000000000)
+    newPlayer.ForceAV("VoicePoints", 10000000000000)
+    newPlayer.ForceAV("Health", 10000000000000)
+    newPlayer.ForceAV("Magicka", 10000000000000)
+    newPlayer.ForceAV("Stamina", 10000000000000)
+
+    SkyUtilitiesScript.InitializeNewPlayer(newPlayer.GetFormID(), movementController.GetFormID(), targetController.GetFormID(), guid as int)
+
+    newPlayer.SetAnimationVariableBool("bAllowRotation", false)
+    ; Ensures that the actor always responds to movement requests.If this is on, the actor will sometimes refuse to walk.
+    newPlayer.SetAnimationVariableBool("bMotionDriven", false)
+    newPlayer.SetAnimationVariableBool("bAnimationDriven", false)
+    ; Keeps actor from turning their body to face someone, does not actually affect head tracking.
+    newPlayer.SetAnimationVariableBool("bHeadTracking", false)
+    newPlayer.SetAnimationVariableBool("bHeadTrackSpine", false)
+
+    Debug.SendAnimationEvent(newPlayer, "IdleForceDefaultState")
+
+    return newPlayer
+EndFunction
+
 Function SetTOD(string[] values)
     if (values[0] as float) != gameDaysPassed
         gameDaysPassed = (values[0] as float)
@@ -837,6 +1001,8 @@ Function ProcessMessage(string msg, Actor ref, string[] values)
         Death(ref, values)
     elseif msg == "Weather"
         SetWeather(ref, values)
+    elseif msg == "SpawnPlayer"
+        SpawnPlayer(ref, values)
     elseif msg == "TOD"
         SetTOD(values)
     elseif msg == "KOFA"

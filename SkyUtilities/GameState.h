@@ -26,7 +26,7 @@ public:
 
 	struct Vector3
 	{
-		float x, y, z;
+		int x, y, z;
 	};
 
 	struct Transform
@@ -48,13 +48,6 @@ public:
 		UInt32 fRightSpellName, fLeftSpellName, fHeadArmorId, fHairTypeId, fHairLongId, fVoiceId, fAmmoId, fBodyArmorId, fHandsArmorId, fForeArmArmorId,
 			fAmuletArmorId, fRingArmorId, fFeetArmorId, fCalvesArmorId, fShieldArmorId, fCircletArmorId, fFaceset, fMouthId, fHeadId, fEyesId, fHairId,
 			fHairColor, fBeardId, fScarId, fBrowId, fShoutId, fRaceId, fHorseHandleId, fRightWeaponId, fLeftWeaponId;
-
-		INT64 GetChecksum()
-		{
-			return weight + sex + height + fRightSpellName + fLeftSpellName + fHeadArmorId + fHairTypeId + fHairLongId + fVoiceId + fAmmoId + fBodyArmorId + fHandsArmorId + fForeArmArmorId +
-				fAmuletArmorId + fRingArmorId + fFeetArmorId + fCalvesArmorId + fShieldArmorId + fCircletArmorId + fFaceset + fMouthId + fHeadId + fEyesId + fHairId +
-				fHairColor + fBeardId + fScarId + fBrowId + fShoutId + fRaceId + fHorseHandleId + fRightWeaponId + fLeftWeaponId;
-		}
 	};
 
 	static TESQuest* mainQuest;

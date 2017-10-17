@@ -62,32 +62,25 @@ void SkyUtility::SetupCallbacks()
 {
 	Networking::instance->_MESSAGE = NetworkHandler::PrintNote;
 	Networking::instance->OnConnected = OnConnected;
+	Networking::instance->OnDisconnected = OnDisconnected;
 	Networking::instance->OnReceiveEvent = ReceiveEvent;
-	Networking::instance->OnExit = OnExit;
+	Networking::instance->OnExit = NetworkHandler::OnExit;
 	Networking::instance->OnRoomEnter = OnRoomEnter;
-}
-
-void SkyUtility::OnExit(int playerNr)
-{
-	for (map<UInt32, PlayerData>::iterator it = NetworkHandler::RemotePlayerMap.begin(); it != NetworkHandler::RemotePlayerMap.end(); it++)
-	{
-		if (it->second.playerNr == playerNr)
-		{
-			NetworkHandler::OnExit(it->first);
-			return;
-		}
-	}
 }
 
 void SkyUtility::OnConnected()
 {
 	NetworkState::bIsConnected = true;
-	GameState::IsRefreshing = true;
 }
 
 void SkyUtility::OnRoomEnter()
 {
 	instance->GetInitialPlayerData();
+}
+
+void SkyUtility::OnDisconnected()
+{
+	NetworkState::bIsConnected = false;
 }
 
 /* LOGIC FUNCTIONS */
@@ -141,7 +134,8 @@ void SkyUtility::Run()
 		complete = true;
 	}
 
-	if (IsInMenuMode(GameState::skyrimVMRegistry, 0, NULL))
+	if (GameState::IsMenuOpen || GameState::IsLoading || NativeFunctions::IsWindowOpen("Fader Menu") || NativeFunctions::IsWindowOpen("TweenMenu") ||
+		NativeFunctions::IsWindowOpen("Console") || NativeFunctions::IsWindowOpen("Console Native UI Menu"))
 	{
 		Networking::instance->sendKeepAlive();
 		Networking::instance->runBasic();
@@ -437,13 +431,6 @@ void SkyUtility::RefreshLocation()
 				if (Networking::instance->getState() != State::STATE_LEAVING || Networking::instance->getState() != State::STATE_LEFT)
 					return;
 			}
-		}
-
-		// Move everyone with the player.
-		for (map<UInt32, PlayerData>::iterator it = NetworkHandler::RemotePlayerMap.begin(); it != NetworkHandler::RemotePlayerMap.end(); it++)
-		{
-			NativeFunctions::ExecuteCommand("MoveTo player 0 -2000 0", it->second.positionController);
-			NativeFunctions::ExecuteCommand("MoveTo player 0 -2000 0", it->second.actor);
 		}
 
 		GameState::IsRefreshing = false;
@@ -944,7 +931,6 @@ void SkyUtility::Connect()
 		NetworkHandler::PrintNote("Disconnecting...");
 		NetworkHandler::Disconnect();
 		Networking::instance->disconnect();
-		NetworkState::bIsConnected = false;
 	}
 }
 

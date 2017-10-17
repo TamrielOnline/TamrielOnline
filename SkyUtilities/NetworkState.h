@@ -34,7 +34,6 @@ public:
 	static bool bIsConnected;
 	static vector<int> vConnectionList;
 	static SInt32 locationId;
-	static INT64 networkId;
 
 	static void(*OnConnectedToServer)();
 	static void(*OnDisconnectedFromServer)();

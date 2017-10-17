@@ -28,7 +28,7 @@ using namespace ExitGames::Common;
 
 /* Used to convert mod id's (0xFF000000) between players. Players will have different load orders.
 The same references will have different mod ids, this maps them between players. */
-static map<UInt32, map<UInt32, UInt32>> modIdMap;
+static map<int, map<UInt32, UInt32>> modIdMap;
 
 /* Stores the reference id (0x00FFFFFF) separate from the mod id (0xFF000000) so that we can use them separately
 and universally between players. */
@@ -40,11 +40,11 @@ struct FormID
 		modId = refId - formId;
 	}
 
-	FormID(UInt32 refId, UInt32 networkId)
+	FormID(UInt32 refId, int playerNr)
 	{
 		formId = refId - ((refId / 0x01000000) * 0x01000000);
 		modId = refId - formId;
-		modId = (modIdMap[networkId].count(modId) > 0 ? modIdMap[networkId][modId] : modId);
+		modId = (modIdMap[playerNr].count(modId) > 0 ? modIdMap[playerNr][modId] : modId);
 	}
 
 	int getId()
@@ -79,15 +79,15 @@ struct FormID
 		formId = newFormId - ((newFormId / 0x01000000) * 0x01000000);
 	}
 
-	UInt32 convertFull(UInt32 networkId)
+	UInt32 convertFull(int playerNr)
 	{
-		modId = modIdMap[networkId][modId];
+		modId = modIdMap[playerNr][modId];
 		return modId + formId;
 	}
 
-	string convertFullString(UInt32 networkId, bool decimal = false)
+	string convertFullString(int playerNr, bool decimal = false)
 	{
-		modId = (modIdMap[networkId].count(modId) > 0 ? modIdMap[networkId][modId] : modId);
+		modId = (modIdMap[playerNr].count(modId) > 0 ? modIdMap[playerNr][modId] : modId);
 		return to_string(decimal);
 	}
 
@@ -116,15 +116,15 @@ private:
 public:
 	UInt32 networkId;
 	bool disabled, isDead, isFlying, inCombat, sitting, remotePlayer, bleedingOut, isArrested, isBribed, isAlarmed, isTeammate, isSneaking, isUnconscious;
-	float x, y, z, xRot, yRot, zRot, height, jumpZOrigin;
+	int x, y, z;
+	float xRot, yRot, zRot, height, jumpZOrigin;
 	UInt32 formId, baseId, combatTarget, sitType, positionControllerFormId, targetControllerFormId;
 	TESObjectCELL* lastCell;
 	ActorEx *positionControllerActor, *actor;
 	TESObjectREFR *targetController, *mount, *object, *positionController;
-	bool isMounted, leftAttack, rightAttack, jump, alert, firstUpdate, equippedSpell, spawned;
+	bool isMounted, leftAttack, rightAttack, jump, alert, firstUpdate, equippedSpell, forceTeleport, spawned;
 	string sitTarget, name, lastLocation, sitState, sitAnim;
 	int64 location;
-	int playerNr;
 
 	PlayerData() = default;
 
@@ -158,9 +158,9 @@ public:
 
 		Hashtable serializedData = Hashtable();
 
-		serializedData.put<JString, float>("x", actor->pos.x);
-		serializedData.put<JString, float>("y", actor->pos.y);
-		serializedData.put<JString, float>("z", actor->pos.z);
+		serializedData.put<JString, int>("x", actor->pos.x);
+		serializedData.put<JString, int>("y", actor->pos.y);
+		serializedData.put<JString, int>("z", actor->pos.z);
 
 		serializedData.put<JString, float>("xRot", GetAngleX((*g_skyrimVM)->GetClassRegistry(), 0, actor));
 
@@ -184,9 +184,9 @@ public:
 
 	static void Deserialize(Hashtable serializedData, PlayerData &newPlayer)
 	{
-		newPlayer.x = ValueObject<float>(serializedData.getValue("x")).getDataCopy();
-		newPlayer.y = ValueObject<float>(serializedData.getValue("y")).getDataCopy();
-		newPlayer.z = ValueObject<float>(serializedData.getValue("z")).getDataCopy();
+		newPlayer.x = ValueObject<int>(serializedData.getValue("x")).getDataCopy();
+		newPlayer.y = ValueObject<int>(serializedData.getValue("y")).getDataCopy();
+		newPlayer.z = ValueObject<int>(serializedData.getValue("z")).getDataCopy();
 
 		newPlayer.xRot = ValueObject<float>(serializedData.getValue("xRot")).getDataCopy();
 
@@ -241,21 +241,21 @@ public:
 	// Contains all the sub-locations within a given location, this is used to help locate NPCs within interiors.
 	static map<BGSLocation*, vector<BGSLocation*>> LocChildLocationLookupTable;
 
-	// RemotePlayerMap[networkId] - A map of all of the currently connected players [PlayerData], accessed using their network "networkId".
+	// RemotePlayerMap[playerNr] - A map of all of the currently connected players [PlayerData], accessed using their network "playerNr".
 	static map<UInt32, PlayerData> RemotePlayerMap;
 	/* LocalNpcMap[(Actor*)someNpc->formId] - "LocalNpcMap" is a map of all of the NPCs currently near the player, this map contains the NPCs that are 
 	sent to remote players	when updating or spawning NPCs. RemoteNpcMap[(Actor*)someNpc->formId] - "RemoteNpcMap" is a map of all of the NPCs spawned 
 	by other players, they exist if	we are not the host of the current location.*/
 	static map<UInt32, PlayerData> LocalNpcMap, RemoteNpcMap;
-	/* Contains pending NPC updates. Each entry in the queue contains the associated "networkId", and the new [PlayerData] for the NPC.
+	/* Contains pending NPC updates. Each entry in the queue contains the associated "playerNr", and the new [PlayerData] for the NPC.
 	The updates are quickly pushed into the queue to minimize blocking, and processed individually in the main update loop. */
-	static queue<pair<UInt32, PlayerData>> RemoteNpcUpdates;
+	static queue<pair<int, PlayerData>> RemoteNpcUpdates;
 	// disabledNpcs[(Actor*)someNpc->formId] - All the currently disabled NPCs. Used to keep track of, and restore NPCs disabled by the network.
 	static set<UInt32> disabledNpcs;
 	// Will prevent the "PreventingUnauthorizedSpawn" function from disabling this NPC (referenceId). This should be cleared out as needed. (npcs no longer being needed)
 	static map<UInt32, bool> ForceSpawn;
 	// A simple list of player reference id's. Used to determine whether or not an npc is/was a player.
-	static vector<UInt32> playerLookup;
+	static vector<UInt32> NetworkHandler::playerLookup;
 
 	// Manages how often NPCs update to limit crashing from overly frequent calls.
 	static map<UInt32, Timer> KOFATimers;
@@ -314,13 +314,8 @@ public:
 			NativeFunctions::ExecuteCommand("Disable 0", ref);
 
 			//Only add the NPC if we can confirm its not a remote player.
-			for (map<UInt32, PlayerData>::iterator it = RemotePlayerMap.begin(); it != RemotePlayerMap.end(); it++)
-			{
-				if (it->second.formId == ref->formID)
-					return true;
-			}
-
-			disabledNpcs.insert(ref->formID);
+			if (RemotePlayerMap.count(ref->formID) == 0)
+				disabledNpcs.insert(ref->formID);
 
 			return true;
 		}
@@ -368,12 +363,13 @@ public:
 		RestoreLocalNpcs();
 		modIdMap.clear();
 		papyrusQueue = queue<PapyrusData>();
-		RemoteNpcUpdates = queue<pair<UInt32, PlayerData>>();
+		RemoteNpcUpdates = queue<pair<int, PlayerData>>();
 
 		if (RemotePlayerMap.size() > 0)
 		{
 			for (map<UInt32, PlayerData>::reverse_iterator it = RemotePlayerMap.rbegin(); it != RemotePlayerMap.rend(); ++it)
 				OnExit(it->first);
+			RemotePlayerMap.clear();
 		}
 
 		HasInitialized = false;
@@ -385,9 +381,9 @@ public:
 		PrintNote("Disconnected.");
 	}
 
-	inline static void NpcSpawn(PlayerData &remoteNpc, UInt32 networkId)
+	inline static void NpcSpawn(PlayerData &remoteNpc, int playerNr)
 	{
-		FormID npcId = FormID(remoteNpc.formId, networkId);
+		FormID npcId = FormID(remoteNpc.formId, playerNr);
 		UInt32 npcRefId = npcId.getFull();
 
 		TESObjectREFR* positionRef = PlaceAtMe_Native(GameState::skyrimVMRegistry, 0, *g_thePlayer, LookupFormByID(ID_TESObjectSTAT::TGRItemMarker), 1, true, false);
@@ -407,7 +403,7 @@ public:
 		NativeFunctions::ExecuteCommand(("SetPos y " + to_string(RemoteNpcMap[npcRefId].y)).c_str(), positionRef);
 		NativeFunctions::ExecuteCommand(("SetPos z " + to_string(RemoteNpcMap[npcRefId].z)).c_str(), positionRef);
 
-		TESForm* npcBaseForm = LookupFormByID(FormID(remoteNpc.baseId, networkId).getFull());
+		TESForm* npcBaseForm = LookupFormByID(FormID(remoteNpc.baseId, playerNr).getFull());
 
 		ignoreSpawns = true;
 
@@ -503,12 +499,42 @@ public:
 		papyrusQueue.emplace(PapyrusData(msg, tGuid, target->formID, tArray));
 	}
 
-	inline static void SpawnPlayer(int64 networkId, Hashtable* data)
+	inline static void SpawnPlayer(const int playerNr, Hashtable* data)
 	{
 		if (PlayerRef == nullptr)
 			PlayerRef = (TESObjectREFR*)(*g_thePlayer);
 
+		string name = (string)ValueObject<JString>(data->getValue(0)).getDataCopy().UTF8Representation();
 		string lorder = (string)ValueObject<JString>(data->getValue(1)).getDataCopy().UTF8Representation();
+		FormID raceId = FormID((UInt32)ValueObject<int64>(data->getValue(2)).getDataCopy());
+		string raceName = (string)ValueObject<JString>(data->getValue(3)).getDataCopy().UTF8Representation();
+		UInt32 sex = (UInt32)ValueObject<int64>(data->getValue(4)).getDataCopy();
+		UInt32 weight = (UInt32)ValueObject<int64>(data->getValue(5)).getDataCopy();
+		FormID rightWeaponId = FormID((UInt32)ValueObject<int64>(data->getValue(6)).getDataCopy());
+		FormID leftWeaponId = FormID((UInt32)ValueObject<int64>(data->getValue(7)).getDataCopy());
+		FormID headArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(8)).getDataCopy());
+		FormID hairTypeId = FormID((UInt32)ValueObject<int64>(data->getValue(9)).getDataCopy());
+		FormID hairLongId = FormID((UInt32)ValueObject<int64>(data->getValue(10)).getDataCopy());
+		FormID bodyArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(11)).getDataCopy());
+		FormID handsArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(12)).getDataCopy());
+		FormID forearmArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(13)).getDataCopy());
+		FormID amuletArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(14)).getDataCopy());
+		FormID ringArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(15)).getDataCopy());
+		FormID feetArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(16)).getDataCopy());
+		FormID calvesArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(17)).getDataCopy());
+		FormID shieldArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(18)).getDataCopy());
+		FormID circletArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(19)).getDataCopy());
+		FormID mouthId = FormID((UInt32)ValueObject<int64>(data->getValue(20)).getDataCopy());
+		FormID headId = FormID((UInt32)ValueObject<int64>(data->getValue(21)).getDataCopy());
+		FormID eyesId = FormID((UInt32)ValueObject<int64>(data->getValue(22)).getDataCopy());
+		FormID hairId = FormID((UInt32)ValueObject<int64>(data->getValue(23)).getDataCopy());
+		FormID beardId = FormID((UInt32)ValueObject<int64>(data->getValue(24)).getDataCopy());
+		FormID scarId = FormID((UInt32)ValueObject<int64>(data->getValue(25)).getDataCopy());
+		FormID browId = FormID((UInt32)ValueObject<int64>(data->getValue(26)).getDataCopy());
+		float height = (float)ValueObject<float>(data->getValue(27)).getDataCopy();
+		FormID faceset = FormID((UInt32)ValueObject<int64>(data->getValue(28)).getDataCopy());
+		UInt32 hairColor = (UInt32)ValueObject<int64>(data->getValue(29)).getDataCopy();
+		FormID voiceId = FormID((UInt32)ValueObject<int64>(data->getValue(30)).getDataCopy());
 
 		// This maps the remote player's load order to our local remote order. Mapping the prefixes from their game to ours. 
 		std::map<std::string, std::string> plModMap;
@@ -520,243 +546,24 @@ public:
 			{
 				if (values[i] == myLoadOrder[j])
 				{
-					// modIdMap[networkId][remotePlayerModId] = localModId
-					modIdMap[networkId][(i - 1) * 0x01000000] = (j * 0x01000000);
+					// modIdMap[playerNr][remotePlayerModId] = localModId
+					modIdMap[playerNr][(i - 1) * 0x01000000] = (j * 0x01000000);
 					break;
 				}
 			}
 		}
 
-		string name = (string)ValueObject<JString>(data->getValue(0)).getDataCopy().UTF8Representation();
-		UInt32 raceId = FormID((UInt32)ValueObject<int64>(data->getValue(2)).getDataCopy()).convertFull(networkId);
-		string raceName = (string)ValueObject<JString>(data->getValue(3)).getDataCopy().UTF8Representation();
-		bool sex = (UInt32)ValueObject<int64>(data->getValue(4)).getDataCopy();
-		UInt32 weight = (UInt32)ValueObject<int64>(data->getValue(5)).getDataCopy();
-		UInt32 rightWeaponId = FormID((UInt32)ValueObject<int64>(data->getValue(6)).getDataCopy()).convertFull(networkId);
-		UInt32 leftWeaponId = FormID((UInt32)ValueObject<int64>(data->getValue(7)).getDataCopy()).convertFull(networkId);
-		UInt32 headArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(8)).getDataCopy()).convertFull(networkId);
-		UInt32 hairTypeId = FormID((UInt32)ValueObject<int64>(data->getValue(9)).getDataCopy()).convertFull(networkId);
-		UInt32 hairLongId = FormID((UInt32)ValueObject<int64>(data->getValue(10)).getDataCopy()).convertFull(networkId);
-		UInt32 bodyArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(11)).getDataCopy()).convertFull(networkId);
-		UInt32 handsArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(12)).getDataCopy()).convertFull(networkId);
-		UInt32 forearmArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(13)).getDataCopy()).convertFull(networkId);
-		UInt32 amuletArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(14)).getDataCopy()).convertFull(networkId);
-		UInt32 ringArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(15)).getDataCopy()).convertFull(networkId);
-		UInt32 feetArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(16)).getDataCopy()).convertFull(networkId);
-		UInt32 calvesArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(17)).getDataCopy()).convertFull(networkId);
-		UInt32 shieldArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(18)).getDataCopy()).convertFull(networkId);
-		UInt32 circletArmorId = FormID((UInt32)ValueObject<int64>(data->getValue(19)).getDataCopy()).convertFull(networkId);
-		UInt32 mouthId = FormID((UInt32)ValueObject<int64>(data->getValue(20)).getDataCopy()).convertFull(networkId);
-		UInt32 headId = FormID((UInt32)ValueObject<int64>(data->getValue(21)).getDataCopy()).convertFull(networkId);
-		UInt32 eyesId = FormID((UInt32)ValueObject<int64>(data->getValue(22)).getDataCopy()).convertFull(networkId);
-		UInt32 hairId = FormID((UInt32)ValueObject<int64>(data->getValue(23)).getDataCopy()).convertFull(networkId);
-		UInt32 beardId = FormID((UInt32)ValueObject<int64>(data->getValue(24)).getDataCopy()).convertFull(networkId);
-		UInt32 scarId = FormID((UInt32)ValueObject<int64>(data->getValue(25)).getDataCopy()).convertFull(networkId);
-		UInt32 browId = FormID((UInt32)ValueObject<int64>(data->getValue(26)).getDataCopy()).convertFull(networkId);
-		float height = (float)ValueObject<float>(data->getValue(27)).getDataCopy();
-		UInt32 faceset = FormID((UInt32)ValueObject<int64>(data->getValue(28)).getDataCopy()).convertFull(networkId);
-		UInt32 hairColor = (UInt32)ValueObject<int64>(data->getValue(29)).getDataCopy();
-		UInt32 voiceId = FormID((UInt32)ValueObject<int64>(data->getValue(30)).getDataCopy()).convertFull(networkId);
+		vector<string> spawnValues{ raceId.convertFullString(playerNr, true), to_string(sex), raceName, 
+			rightWeaponId.convertFullString(playerNr, true), leftWeaponId.convertFullString(playerNr, true), headArmorId.convertFullString(playerNr, true),
+			hairTypeId.convertFullString(playerNr, true),	hairLongId.convertFullString(playerNr, true), bodyArmorId.convertFullString(playerNr, true),
+			handsArmorId.convertFullString(playerNr, true), forearmArmorId.convertFullString(playerNr, true), amuletArmorId.convertFullString(playerNr, true),	
+			ringArmorId.convertFullString(playerNr, true), feetArmorId.convertFullString(playerNr, true), calvesArmorId.convertFullString(playerNr, true),
+			shieldArmorId.convertFullString(playerNr, true), circletArmorId.convertFullString(playerNr, true), mouthId.convertFullString(playerNr, true), 
+			headId.convertFullString(playerNr, true), eyesId.convertFullString(playerNr, true), hairId.convertFullString(playerNr, true), 
+			beardId.convertFullString(playerNr, true), scarId.convertFullString(playerNr, true), browId.convertFullString(playerNr, true), to_string(height), 
+			faceset.convertFullString(playerNr, true), to_string(hairColor), voiceId.convertFullString(playerNr, true), to_string(weight), name, to_string(playerNr) };
 
-		TESForm* emptyBase = LookupFormByID(0x0008A91A);
-		TESObjectREFR* movementController = PlaceAtMe_Native(GameState::skyrimVMRegistry, 0, PlayerRef, emptyBase, 1, true, false);
-		TESObjectREFR* targetController = PlaceAtMe_Native(GameState::skyrimVMRegistry, 0, PlayerRef, emptyBase, 1, true, false);
-
-		bool setRaceDirect = false;
-		TESNPC* playerBase = NULL;
-
-		if (raceId == 79683 || raceId == 559168) // High Elves
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079BED), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x0005EF9C), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79680 || raceId == 559162) // Argonians
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x000B2E11), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00043E57), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79689 || raceId == 559236) // Wood Elves
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079CD3), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x0005EF9A), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79681 || raceId == 559164) // Bretons
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F65), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F6A), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79682 || raceId == 559165) // Dark Elves
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F5B), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x0005EFA7), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79684 || raceId == 559172) // Imperials
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F66), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00026921), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79685 || raceId == 559173) // Khajiit
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x000EE856), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00043E59), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79686 || raceId == 558996) // Nords
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F68), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x0001750C), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79687 || raceId == 688825) // Orcs
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F4E), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F69), TESForm, TESNPC);
-		}
-
-		else if (raceId == 79688 || raceId == 559174) // Redguard
-		{
-			if (sex)
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F67), TESForm, TESNPC);
-			else
-				playerBase = DYNAMIC_CAST(LookupFormByID(0x0005B4F8), TESForm, TESNPC);
-		}
-
-		else // Custom races, animals, monsters, etc...
-		{
-			playerBase = DYNAMIC_CAST(LookupFormByID(0x00079F67), TESForm, TESNPC); //The race will be changed after the character is spawned.
-			setRaceDirect = true;
-		}
-
-		SetInvulnerable(GameState::skyrimVMRegistry, 0, playerBase, true);
-		NativeFunctions::ExecuteCommand(((string)"SetEssential " + Utilities::GetFormIDString(playerBase->formID) + " 1").c_str(), NULL);
-		NativeFunctions::ExecuteCommand(("SetPos x " + to_string(PlayerRef->pos.x)).c_str(), movementController);
-		NativeFunctions::ExecuteCommand(("SetPos y " + to_string(PlayerRef->pos.y - 2000)).c_str(), movementController);
-		NativeFunctions::ExecuteCommand(("SetPos z " + to_string(PlayerRef->pos.z)).c_str(), movementController);
-
-		Actor* newPlayer = DYNAMIC_CAST(PlaceAtMe_Native(GameState::skyrimVMRegistry, 0, movementController, playerBase, 1, true, false), TESObjectREFR, Actor);
-
-		if (std::find(playerLookup.begin(), playerLookup.end(), newPlayer->formID) == playerLookup.end())
-			playerLookup.push_back(newPlayer->formID);
-
-		EnableNet(newPlayer);
-
-		if (setRaceDirect)
-			SetRace(NULL, newPlayer, BSFixedString(raceName.c_str()));
-
-		NativeFunctions::SetVoice(newPlayer, voiceId);
-		NativeFunctions::SetHairColor(newPlayer, hairColor);
-		NativeFunctions::SetFaceTextureSet(newPlayer, faceset);
-		NativeFunctions::SetHeight(newPlayer, height);
-
-		IgnoreFriendlyHits(GameState::skyrimVMRegistry, 0, newPlayer, true);
-		SetRelationshipRank(GameState::skyrimVMRegistry, 0, newPlayer, *g_thePlayer, 1);
-		APS(NULL, newPlayer, "SkyTools InitiateTracking");
-		RemoveAllItems(GameState::skyrimVMRegistry, 0, newPlayer, false, true);
-		SetDisplayName(NULL, newPlayer, name.c_str());
-
-		NativeFunctions::ChangeHeadPart(newPlayer, mouthId);
-		NativeFunctions::ChangeHeadPart(newPlayer, headId);
-		NativeFunctions::ChangeHeadPart(newPlayer, eyesId);
-		NativeFunctions::ChangeHeadPart(newPlayer, hairId);
-		NativeFunctions::ChangeHeadPart(newPlayer, beardId);
-		NativeFunctions::ChangeHeadPart(newPlayer, scarId);
-		NativeFunctions::ChangeHeadPart(newPlayer, browId);
-		NativeFunctions::QueueNiNodeUpdate(newPlayer);
-
-		TESForm* rawEquip = LookupFormByID(rightWeaponId);
-
-		if (rawEquip)
-		{
-			if (rawEquip->GetFormType() == 41)
-				NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1 right").c_str(), newPlayer);
-			else if (rawEquip->GetFormType() == 22)
-				EquipSpell(GameState::skyrimVMRegistry, 0, newPlayer, DYNAMIC_CAST(rawEquip, TESForm, SpellItem), 1);
-		}
-
-		rawEquip = LookupFormByID(leftWeaponId);
-
-		if (rawEquip)
-		{
-			if (rawEquip->GetFormType() == 41)
-				NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1 left").c_str(), newPlayer);
-			else if (rawEquip->GetFormType() == 22)
-				EquipSpell(GameState::skyrimVMRegistry, 0, newPlayer, DYNAMIC_CAST(rawEquip, TESForm, SpellItem), 0);
-		}
-
-		rawEquip = LookupFormByID(headArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(hairTypeId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(hairLongId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(bodyArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(handsArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(forearmArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(amuletArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(ringArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(feetArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(calvesArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(shieldArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-		rawEquip = LookupFormByID(circletArmorId);
-		if (rawEquip)
-			NativeFunctions::ExecuteCommand(((string)"equipitem " + Utilities::GetFormIDString(rawEquip->formID) + " 1").c_str(), newPlayer);
-
-		NativeFunctions::ExecuteCommand("SetRestrained 1", newPlayer);
-		MoveTo(GameState::skyrimVMRegistry, 0, newPlayer, newPlayer, 0, 0, 0, true); // Releases the player's movement
-		ForceActorValue(GameState::skyrimVMRegistry, 0, newPlayer, new BSFixedString("Blindness"), 10000000000000);
-		ForceActorValue(GameState::skyrimVMRegistry, 0, newPlayer, new BSFixedString("ShoutRecoveryMult"), 0);
-		ForceActorValue(GameState::skyrimVMRegistry, 0, newPlayer, new BSFixedString("VoiceRate"), 10000000000000);
-		ForceActorValue(GameState::skyrimVMRegistry, 0, newPlayer, new BSFixedString("VoicePoints"), 10000000000000);
-		ForceActorValue(GameState::skyrimVMRegistry, 0, newPlayer, new BSFixedString("Health"), 10000000000000);
-		ForceActorValue(GameState::skyrimVMRegistry, 0, newPlayer, new BSFixedString("Magicka"), 10000000000000);
-		ForceActorValue(GameState::skyrimVMRegistry, 0, newPlayer, new BSFixedString("Stamina"), 10000000000000);
-
-		InitializeNewPlayer(NULL, newPlayer->formID, movementController->formID, targetController->formID, networkId);
-		RemotePlayerMap[networkId].name = name;
-		Networking::instance->OnRoomEnter();
+		PushToSkyrim("SpawnPlayer", playerNr, PlayerRef, spawnValues);
 	}
 
 	inline static void OnUserExit()
@@ -822,66 +629,59 @@ public:
 	}
 
 	// When a player disconnects, disable them, and move their Actor to a holding area.
-	inline static void OnExit(UInt32 networkId)
+	inline static void OnExit(int playerNr)
 	{
-		NativeFunctions::ExecuteCommand("MoveTo player 0 -2000 0", RemotePlayerMap[networkId].actor);
-		NativeFunctions::ExecuteCommand("MoveTo player 0 -2000 0", RemotePlayerMap[networkId].positionController);
-		NativeFunctions::ExecuteCommand("APS SkyTools DisableTracking", RemotePlayerMap[networkId].actor);
+		RemotePlayerMap[playerNr].disabled = true;
+		DisableNet(RemotePlayerMap[playerNr].actor);
+		MoveTo(GameState::skyrimVMRegistry, 0, RemotePlayerMap[playerNr].actor, (TESObjectREFR*)LookupFormByID(ID_TESObjectREFR::E3demoMarker), 0, 0, 0, true);
+		NativeFunctions::ExecuteCommand("APS SkyTools DisableTracking", RemotePlayerMap[playerNr].actor);
 	}
 
 	// Finalize the player's spawn
-	inline static void InitializeNewPlayer(StaticFunctionTag* base, UInt32 newPlayer, UInt32 movementController, UInt32 targetController, UInt32 networkId)
+	inline static void InitializeNewPlayer(StaticFunctionTag* base, UInt32 newPlayer, UInt32 movementController, UInt32 targetController, UInt32 bUser)
 	{
-		RemotePlayerMap[networkId].networkId = networkId;
-		RemotePlayerMap[networkId].disabled = false;
-		RemotePlayerMap[networkId].actor = (ActorEx*)LookupFormByID(newPlayer);
-		RemotePlayerMap[networkId].object = RemotePlayerMap[networkId].actor;
-		RemotePlayerMap[networkId].lastLocation = "";
-		RemotePlayerMap[networkId].lastCell = RemotePlayerMap[networkId].actor->parentCell;
-		RemotePlayerMap[networkId].positionController = (TESObjectREFR*)LookupFormByID(movementController);
-		RemotePlayerMap[networkId].positionControllerActor = (ActorEx*)RemotePlayerMap[networkId].positionController;
-		RemotePlayerMap[networkId].height = ((TESNPC*)RemotePlayerMap[networkId].actor->baseForm)->height;
-		RemotePlayerMap[networkId].formId = newPlayer;
-		RemotePlayerMap[networkId].positionControllerFormId = RemotePlayerMap[networkId].positionController->formID;
-		RemotePlayerMap[networkId].targetController = (TESObjectREFR*)LookupFormByID(targetController);
-		RemotePlayerMap[networkId].targetControllerFormId = RemotePlayerMap[networkId].targetController->formID;
-		RemotePlayerMap[networkId].equippedSpell = false;
-		RemotePlayerMap[networkId].mount = NULL;
-		RemotePlayerMap[networkId].isMounted = false;
-		RemotePlayerMap[networkId].leftAttack = false;
-		RemotePlayerMap[networkId].rightAttack = false;
-		RemotePlayerMap[networkId].jump = false;
-		RemotePlayerMap[networkId].firstUpdate = true;
-		RemotePlayerMap[networkId].alert = false;
-		RemotePlayerMap[networkId].sitType = 0;
+		RemotePlayerMap[bUser].networkId = bUser;
+		RemotePlayerMap[bUser].disabled = false;
+		RemotePlayerMap[bUser].actor = (ActorEx*)LookupFormByID(newPlayer);
+		RemotePlayerMap[bUser].object = RemotePlayerMap[bUser].actor;
+		RemotePlayerMap[bUser].lastLocation = "";
+		RemotePlayerMap[bUser].lastCell = RemotePlayerMap[bUser].actor->parentCell;
+		RemotePlayerMap[bUser].positionController = (TESObjectREFR*)LookupFormByID(movementController);
+		RemotePlayerMap[bUser].positionControllerActor = (ActorEx*)RemotePlayerMap[bUser].positionController;
+		RemotePlayerMap[bUser].forceTeleport = false;
+		RemotePlayerMap[bUser].height = ((TESNPC*)RemotePlayerMap[bUser].actor->baseForm)->height;
+		RemotePlayerMap[bUser].formId = newPlayer;
+		RemotePlayerMap[bUser].positionControllerFormId = RemotePlayerMap[bUser].positionController->formID;
+		RemotePlayerMap[bUser].targetController = (TESObjectREFR*)LookupFormByID(targetController);
+		RemotePlayerMap[bUser].targetControllerFormId = RemotePlayerMap[bUser].targetController->formID;
+		RemotePlayerMap[bUser].equippedSpell = false;
+		RemotePlayerMap[bUser].mount = NULL;
+		RemotePlayerMap[bUser].isMounted = false;
+		RemotePlayerMap[bUser].leftAttack = false;
+		RemotePlayerMap[bUser].rightAttack = false;
+		RemotePlayerMap[bUser].jump = false;
+		RemotePlayerMap[bUser].firstUpdate = true;
+		RemotePlayerMap[bUser].alert = false;
+		RemotePlayerMap[bUser].sitType = 0;
 
 		// These values cannot be set in papyrus, they lead to errors.
-		NativeFunctions::ExecuteCommand("forceav Confidence 4", RemotePlayerMap[networkId].actor);
-		NativeFunctions::ExecuteCommand("forceav Aggression 0", RemotePlayerMap[networkId].actor);
-		
-		NativeFunctions::ExecuteCommand("sgv bAllowRotation 0", RemotePlayerMap[networkId].actor);
-		// Ensures that the actor always responds to movement requests.If this is on, the actor will sometimes refuse to walk.
-		NativeFunctions::ExecuteCommand("sgv bMotionDriven 0", RemotePlayerMap[networkId].actor);
-		NativeFunctions::ExecuteCommand("sgv bAnimationDriven 0", RemotePlayerMap[networkId].actor);
-		// Keeps actor from turning their body to face someone, does not actually affect head tracking.
-		NativeFunctions::ExecuteCommand("sgv bHeadTracking 0", RemotePlayerMap[networkId].actor);
-		NativeFunctions::ExecuteCommand("sgv bHeadTrackSpine 0", RemotePlayerMap[networkId].actor);
-		NativeFunctions::SendAnimationEvent(RemotePlayerMap[networkId].actor, "IdleForceDefaultState");
+		NativeFunctions::ExecuteCommand("forceav Confidence 4", RemotePlayerMap[bUser].actor);
+		NativeFunctions::ExecuteCommand("forceav Aggression 0", RemotePlayerMap[bUser].actor);
 
 		// Ensure that the player isn't being treated like an NPC
-		if (LocalNpcMap.count(RemotePlayerMap[networkId].formId))
+		if (LocalNpcMap.count(RemotePlayerMap[bUser].formId))
 		{
 			for (map<UInt32, PlayerData>::iterator it = LocalNpcMap.begin(); it != LocalNpcMap.end(); ++it)
 			{
-				if (it->first == RemotePlayerMap[networkId].formId)
+				if (it->first == RemotePlayerMap[bUser].formId)
 				{
-					LocalNpcMap.erase(RemotePlayerMap[networkId].formId);
+					LocalNpcMap.erase(RemotePlayerMap[bUser].formId);
 					break;
 				}
 			}
 		}
 
-		RemotePlayerMap[networkId].spawned = true;
+		RemotePlayerMap[bUser].spawned = true;
 	}
 
 	inline static bool IsConnected()
@@ -910,7 +710,7 @@ public:
 
 	inline static bool IsAlone()
 	{
-		if (Networking::instance->getPlayerCount() > 1)
+		if (Networking::instance->getPlayerCount() > 0)
 			return false;
 		return true;
 	}
@@ -930,14 +730,14 @@ public:
 		return (abs(target->pos.x - source->pos.x) + abs(target->pos.y - source->pos.y) + abs(target->pos.z - source->pos.z)) > distance;
 	}
 
-	inline static void UpdateNpc(PlayerData &tNpc, UInt32 networkId)
+	inline static void UpdateNpc(PlayerData &tNpc, int playerNr)
 	{
-		UInt32 npcNum = FormID(tNpc.formId, networkId).getFull();
+		UInt32 npcNum = FormID(tNpc.formId, playerNr).getFull();
 
 		//If the NPC is new, spawn them and continue.
 		if (!RemoteNpcMap[npcNum].spawned)
 		{
-			NpcSpawn(tNpc, networkId);
+			NpcSpawn(tNpc, playerNr);
 			return;
 		}
 
@@ -952,9 +752,9 @@ public:
 			/* Get the difference between our last update and this update
 			and extrapolate (albeit simply) to our next predicted position. 
 			Which the npc will move towards. */
-			float interX = (tNpc.x - RemoteNpcMap[npcNum].x) + tNpc.x;
-			float interY = (tNpc.y - RemoteNpcMap[npcNum].y) + tNpc.y;
-			float interZ = (tNpc.z - RemoteNpcMap[npcNum].z) + tNpc.z;
+			int interX = (tNpc.x - RemoteNpcMap[npcNum].x) + tNpc.x;
+			int interY = (tNpc.y - RemoteNpcMap[npcNum].y) + tNpc.y;
+			int interZ = (tNpc.z - RemoteNpcMap[npcNum].z) + tNpc.z;
 
 			RemoteNpcMap[npcNum].x = tNpc.x;
 			RemoteNpcMap[npcNum].y = tNpc.y;
@@ -1104,89 +904,93 @@ public:
 	}
 
 	// Papyrus interface
-	inline static bool GetRemotePlayerDataBool(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName)
+	inline static bool GetRemotePlayerDataBool(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName)
 	{
 		string normalizedName = tName.data;
 
 		if (normalizedName == "isMounted")
-			return RemotePlayerMap[networkId].isMounted;
+			return RemotePlayerMap[playerNr].isMounted;
 		else if (normalizedName == "alert")
-			return RemotePlayerMap[networkId].alert;
+			return RemotePlayerMap[playerNr].alert;
 		else if (normalizedName == "firstUpdate")
-			return RemotePlayerMap[networkId].firstUpdate;
+			return RemotePlayerMap[playerNr].firstUpdate;
+		else if (normalizedName == "forceTeleport")
+			return RemotePlayerMap[playerNr].forceTeleport;
 		else if (normalizedName == "disabled")
-			return RemotePlayerMap[networkId].disabled;
+			return RemotePlayerMap[playerNr].disabled;
 		else if (normalizedName == "jump")
-			return RemotePlayerMap[networkId].jump;
+			return RemotePlayerMap[playerNr].jump;
 		else if (normalizedName == "equippedSpell")
-			return RemotePlayerMap[networkId].equippedSpell;
+			return RemotePlayerMap[playerNr].equippedSpell;
 		else
 			return false;
 	}
 
 	// Papyrus interface
-	inline static float GetRemotePlayerDataFloat(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName)
+	inline static float GetRemotePlayerDataFloat(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName)
 	{
 		string normalizedName = tName.data;
 
 		if (normalizedName == "height")
-			return RemotePlayerMap[networkId].height;
+			return RemotePlayerMap[playerNr].height;
 		else if (normalizedName == "jumpZOrigin")
-			return RemotePlayerMap[networkId].jumpZOrigin;
+			return RemotePlayerMap[playerNr].jumpZOrigin;
 		else
 			return -1;
 	}
 
 	// Papyrus interface
-	inline static UInt32 GetRemotePlayerDataInt(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName)
+	inline static UInt32 GetRemotePlayerDataInt(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName)
 	{
 		string normalizedName = tName.data;
 
 		if (normalizedName == "sitType")
-			return RemotePlayerMap[networkId].sitType;
+			return RemotePlayerMap[playerNr].sitType;
 		else
 			return -1;
 	}
 
 	// Papyrus interface
-	inline static BSFixedString GetRemotePlayerDataString(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName)
+	inline static BSFixedString GetRemotePlayerDataString(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName)
 	{
 		string normalizedName = tName.data;
 		
 		if (normalizedName == "lastLocation")
-			return RemotePlayerMap[networkId].lastLocation.c_str();
+			return RemotePlayerMap[playerNr].lastLocation.c_str();
 		else if (normalizedName == "locationid")
 			return to_string(NetworkState::locationId).c_str();
 		else if (normalizedName == "location")
-			return to_string(RemotePlayerMap[networkId].location).c_str();
+			return to_string(RemotePlayerMap[playerNr].location).c_str();
 		else if (normalizedName  == "sitAnim")
-			return RemotePlayerMap[networkId].sitAnim.c_str();
+			return RemotePlayerMap[playerNr].sitAnim.c_str();
 		else if (normalizedName == "horse")
-			return ((string)"0x" + Utilities::GetFormIDString(RemotePlayerMap[networkId].mount->formID)).c_str();
+			return ((string)"0x" + Utilities::GetFormIDString(RemotePlayerMap[playerNr].mount->formID)).c_str();
 		else if (normalizedName == "targetController")
-			return ((string)"0x" + Utilities::GetFormIDString(RemotePlayerMap[networkId].targetController->formID)).c_str();
+			return ((string)"0x" + Utilities::GetFormIDString(RemotePlayerMap[playerNr].targetController->formID)).c_str();
 		else if (normalizedName == "positionController")
-			return ((string)"0x" + Utilities::GetFormIDString(RemotePlayerMap[networkId].positionController->formID)).c_str();
+			return ((string)"0x" + Utilities::GetFormIDString(RemotePlayerMap[playerNr].positionController->formID)).c_str();
 		else
 			return "";
 	}
 
 	// Papyrus interface
-	inline static void SetRemotePlayerDataBool(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName, bool val)
+	inline static void SetRemotePlayerDataBool(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName, bool val)
 	{
 		string normalizedName = tName.data;
-		UInt32 refId = networkId; //To clarify when we're using a refId in place of the player number for papyrus global function calls.
+		UInt32 refId = playerNr; //To clarify when we're using a refId in place of the player number for papyrus global function calls.
 
 		if (normalizedName == "jump")
-			RemotePlayerMap[networkId].jump = val;
+			RemotePlayerMap[playerNr].jump = val;
 		else if (normalizedName == "alert")
-			RemotePlayerMap[networkId].alert = val;
+			RemotePlayerMap[playerNr].alert = val;
 		else if (normalizedName == "equippedSpell")
-			RemotePlayerMap[networkId].equippedSpell = val;
+			RemotePlayerMap[playerNr].equippedSpell = val;
 		else if (normalizedName == "isMounted")
-			RemotePlayerMap[networkId].isMounted = val;
+			RemotePlayerMap[playerNr].isMounted = val;
 		else if (normalizedName == "firstUpdate")
-			RemotePlayerMap[networkId].firstUpdate = val;
+			RemotePlayerMap[playerNr].firstUpdate = val;
+		else if (normalizedName == "forceTeleport")
+			RemotePlayerMap[playerNr].forceTeleport = val;
 		else if (normalizedName == "ignoreSpawns")
 			ignoreSpawns = val;
 		else if (normalizedName == "ForceSpawn")
@@ -1194,30 +998,30 @@ public:
 	}
 
 	// Papyrus interface
-	inline static void SetRemotePlayerDataFloat(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName, float val)
+	inline static void SetRemotePlayerDataFloat(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName, float val)
 	{
 	}
 
 	// Papyrus interface
-	inline static void SetRemotePlayerDataInt(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName, UInt32 val)
+	inline static void SetRemotePlayerDataInt(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName, UInt32 val)
 	{
 		string normalizedName = tName.data;
 
 		if (normalizedName == "sitType")
-			RemotePlayerMap[networkId].sitType = val;
+			RemotePlayerMap[playerNr].sitType = val;
 		else if (normalizedName == "horse")
-			RemotePlayerMap[networkId].mount = (TESObjectREFR*)LookupFormByID(val);
+			RemotePlayerMap[playerNr].mount = (TESObjectREFR*)LookupFormByID(val);
 		else if (normalizedName == "Player")
 			playerLookup.push_back(val);
 	}
 
 	// Papyrus interface
-	inline static void SetRemotePlayerDataString(StaticFunctionTag* base, UInt32 networkId, BSFixedString tName, BSFixedString val)
+	inline static void SetRemotePlayerDataString(StaticFunctionTag* base, UInt32 playerNr, BSFixedString tName, BSFixedString val)
 	{
 		string normalizedName = tName.data;
 
 		if (normalizedName == "name")
-			RemotePlayerMap[networkId].name = val.data;
+			RemotePlayerMap[playerNr].name = val.data;
 	}
 
 	// Papyrus interface
@@ -1251,10 +1055,8 @@ public:
 		if (!IsConnected())
 			return;
 
-		Hashtable hashData = Hashtable();
-		hashData.put<int, int64>(0, NetworkState::networkId);
-		hashData.put<int, JString>(1, JString(data));
-		Networking::instance->sendEvent<Hashtable>(true, hashData, NetworkState::EV::ID_MESSAGE, NetworkState::CHANNEL::EVENT);
+		JString jData = data;
+		Networking::instance->sendEvent<JString>(true, jData, NetworkState::EV::ID_MESSAGE, NetworkState::CHANNEL::EVENT);
 	}
 
 	// Enables/disables NPCs that players that enter/leave the current area. Determines the current locations master for NPC synchronization, weather, etc...
@@ -1262,6 +1064,19 @@ public:
 	{
 		if (IsAlone())
 			return;
+
+		for (map<UInt32, PlayerData>::iterator it = NetworkHandler::RemotePlayerMap.begin(); it != NetworkHandler::RemotePlayerMap.end(); ++it)
+		{
+			if (IsSpawned(it->first))
+			{
+				if (it->second.disabled)
+				{
+					EnableNet(it->second.actor);
+					it->second.disabled = false;
+					it->second.forceTeleport = true;
+				}
+			}
+		}
 
 		if (IsLocationMaster())
 		{
@@ -1279,12 +1094,12 @@ public:
 		}
 	}
 
-	inline static void ProcessLock(Hashtable* data)
+	inline static void ProcessLock(int playerNr, Hashtable* data)
 	{
 		UInt32 lockId;
 		bool isLocked;
 
-		for (int i = 0; i < data->getSize() - 1; i += 2)
+		for (int i = 0; i < data->getSize(); i += 2)
 		{
 			lockId = (UInt32)ValueObject<int64>(data->getValue(i)).getDataCopy();
 			isLocked = ValueObject<bool>(data->getValue(i+1)).getDataCopy();
@@ -1315,9 +1130,9 @@ public:
 		}
 	}
 
-	inline static bool IsSpawned(const UInt32 networkId)
+	inline static bool IsSpawned(const int playerNr)
 	{
-		if (RemotePlayerMap.count(networkId) < 1 || !RemotePlayerMap[networkId].spawned || !RemotePlayerMap[networkId].actor)
+		if (RemotePlayerMap.count(playerNr) < 1 || !RemotePlayerMap[playerNr].spawned || !RemotePlayerMap[playerNr].actor)
 			return false;
 		return true;
 	}
@@ -1326,56 +1141,44 @@ public:
 	{
 		if (eventCode == NetworkState::EV::ID_MESSAGE)
 		{
-			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
-			int64 networkId = ValueObject<int64>(hashData.getValue<int>(0)).getDataCopy();
-
-			if (!IsSpawned(networkId))
+			if (!IsSpawned(playerNr))
 				return;
 
-			OnPublicMessage(networkId, ValueObject<JString>(hashData.getValue(1)).getDataCopy());
+			OnPublicMessage(playerNr, ValueObject<JString>(eventContent).getDataCopy());
 			Tests::debug("ID_MESSAGE received.");
 		}
 
 		else if (eventCode == NetworkState::EV::ID_SPAWN_PLAYER)
 		{
-			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
-			UInt32 networkId = ValueObject<int64>(hashData.getValue<int>(31)).getDataCopy();
-
-			if (IsSpawned(networkId))
-			{
-				RemotePlayerMap[networkId].playerNr = playerNr;
+			if (IsSpawned(playerNr))
 				return;
-			}
 
-			SpawnPlayer(networkId, &hashData);
+			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
+			SpawnPlayer(playerNr, &hashData);
 			Tests::debug("ID_SPAWN_PLAYER received");
 		}
 
 		else if (eventCode == NetworkState::EV::ID_LOCK_UPDATE)
 		{
-			Hashtable lockData = ValueObject<Hashtable>(eventContent).getDataCopy();
-			int64 networkId = ValueObject<int64>(lockData.getValue<int>(lockData.getSize() - 1)).getDataCopy();
-
-			if (!IsSpawned(networkId))
+			if (!IsSpawned(playerNr))
 				return;
 
-			ProcessLock(&lockData);
+			Hashtable lockData = ValueObject<Hashtable>(eventContent).getDataCopy();
+			ProcessLock(playerNr, &lockData);
 			Tests::debug("ID_LOCK_UPDATE received.");
 		}
 
 		else if (eventCode == NetworkState::EV::ID_POSITION_UPDATE)
 		{
-			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
-			int64 networkId = ValueObject<int64>(hashData.getValue(6)).getDataCopy();
-
-			if (!IsSpawned(networkId))
+			if (!IsSpawned(playerNr))
 				return;
 
-			float x = ValueObject<float>(hashData.getValue(0)).getDataCopy(),
-				y = ValueObject<float>(hashData.getValue(1)).getDataCopy(),
-				z = ValueObject<float>(hashData.getValue(2)).getDataCopy();
+			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
 
-			int	xRot = ValueObject<int>(hashData.getValue(3)).getDataCopy(),
+			int x = ValueObject<int>(hashData.getValue(0)).getDataCopy(), 
+				y = ValueObject<int>(hashData.getValue(1)).getDataCopy(), 
+				z = ValueObject<int>(hashData.getValue(2)).getDataCopy(), 
+				xRot = ValueObject<int>(hashData.getValue(3)).getDataCopy(),
 				yRot = ValueObject<int>(hashData.getValue(4)).getDataCopy(),
 				zRot = ValueObject<int>(hashData.getValue(5)).getDataCopy();
 
@@ -1383,108 +1186,116 @@ public:
 
 			Tests::debug("ID_POSITION_UPDATE received.");
 
-			if (IsEnabled(RemotePlayerMap[networkId].actor))
+			if (IsEnabled(RemotePlayerMap[playerNr].actor))
 			{
 				Tests::debug("ID_POSITION_UPDATE processing.");
+				//Move the position controller to the player's worldspace/cell.
+				if (RemotePlayerMap[playerNr].forceTeleport)
+				{
+					NativeFunctions::ExecuteCommand("MoveTo player 0 -2000 0", RemotePlayerMap[playerNr].positionController);
+					NativeFunctions::ExecuteCommand("MoveTo player 0 -2000 0", RemotePlayerMap[playerNr].actor);
+					RemotePlayerMap[playerNr].sitType = 0;
+					RemotePlayerMap[playerNr].forceTeleport = false;
+				}
 
 				// Update the position to guide the Actor towards the positionController.
-				NativeFunctions::ExecuteCommand(("SetPos x " + to_string(x)).c_str(), RemotePlayerMap[networkId].positionController);
-				NativeFunctions::ExecuteCommand(("SetPos y " + to_string(y)).c_str(), RemotePlayerMap[networkId].positionController);
-				NativeFunctions::ExecuteCommand(("SetPos z " + to_string(z)).c_str(), RemotePlayerMap[networkId].positionController);
+				NativeFunctions::ExecuteCommand(("SetPos x " + to_string(x)).c_str(), RemotePlayerMap[playerNr].positionController);
+				NativeFunctions::ExecuteCommand(("SetPos y " + to_string(y)).c_str(), RemotePlayerMap[playerNr].positionController);
+				NativeFunctions::ExecuteCommand(("SetPos z " + to_string(z)).c_str(), RemotePlayerMap[playerNr].positionController);
 
 				/* If someone would like to test a quest based replacement for this that would be great, as "KeepOffsetFromActor" does no obstacle avoidance.
 				Which is good, and bad I suppose. Additionally "KeepOffsetFromActor" requires successive calls to ensure that the built in AI does not take over. */
-				KOFA(RemotePlayerMap[networkId].actor, RemotePlayerMap[networkId].positionController);
+				KOFA(RemotePlayerMap[playerNr].actor, RemotePlayerMap[playerNr].positionController);
 
-				if (DistanceExceeded(RemotePlayerMap[networkId].positionController, RemotePlayerMap[networkId].actor, 1024))
+				if (DistanceExceeded(RemotePlayerMap[playerNr].positionController, RemotePlayerMap[playerNr].actor, 1024))
 				{
-					NativeFunctions::ExecuteCommand(("MoveTo " + Utilities::GetFormIDString(RemotePlayerMap[networkId].positionController->formID) + " 0 0 0").c_str(), RemotePlayerMap[networkId].actor);
-					KOFA(RemotePlayerMap[networkId].actor, RemotePlayerMap[networkId].positionController);
+					NativeFunctions::ExecuteCommand(("MoveTo " + Utilities::GetFormIDString(RemotePlayerMap[playerNr].positionController->formID) + " 0 0 0").c_str(), RemotePlayerMap[playerNr].actor);
+					KOFA(RemotePlayerMap[playerNr].actor, RemotePlayerMap[playerNr].positionController);
 				}
 
-				if (RemotePlayerMap[networkId].sitType != 0 || RemotePlayerMap[networkId].firstUpdate)
+				if (RemotePlayerMap[playerNr].sitType != 0 || RemotePlayerMap[playerNr].firstUpdate)
 				{
-					NativeFunctions::ExecuteCommand(("MoveTo " + Utilities::GetFormIDString(RemotePlayerMap[networkId].positionController->formID) + " 0 0 0").c_str(), RemotePlayerMap[networkId].actor);
-					RemotePlayerMap[networkId].firstUpdate = false;
-					KOFA(RemotePlayerMap[networkId].actor, RemotePlayerMap[networkId].positionController);
+					NativeFunctions::ExecuteCommand(("MoveTo " + Utilities::GetFormIDString(RemotePlayerMap[playerNr].positionController->formID) + " 0 0 0").c_str(), RemotePlayerMap[playerNr].actor);
+					RemotePlayerMap[playerNr].firstUpdate = false;
+					KOFA(RemotePlayerMap[playerNr].actor, RemotePlayerMap[playerNr].positionController);
 				}
 
-				if (RemotePlayerMap[networkId].actor->IsOnMount())
+				if (RemotePlayerMap[playerNr].actor->IsOnMount())
 				{
-					NativeFunctions::ExecuteCommand(("SetAngle x " + to_string(xRot)).c_str(), RemotePlayerMap[networkId].mount);
-					NativeFunctions::ExecuteCommand(("SetAngle y " + to_string(yRot)).c_str(), RemotePlayerMap[networkId].mount);
-					NativeFunctions::ExecuteCommand(("SetAngle z " + to_string(zRot)).c_str(), RemotePlayerMap[networkId].mount);
+					NativeFunctions::ExecuteCommand(("SetAngle x " + to_string(xRot)).c_str(), RemotePlayerMap[playerNr].mount);
+					NativeFunctions::ExecuteCommand(("SetAngle y " + to_string(yRot)).c_str(), RemotePlayerMap[playerNr].mount);
+					NativeFunctions::ExecuteCommand(("SetAngle z " + to_string(zRot)).c_str(), RemotePlayerMap[playerNr].mount);
 				}
 				else
 				{
-					NativeFunctions::ExecuteCommand(("SetAngle x " + to_string(xRot)).c_str(), RemotePlayerMap[networkId].actor);
-					NativeFunctions::ExecuteCommand(("SetAngle y " + to_string(yRot)).c_str(), RemotePlayerMap[networkId].actor);
-					NativeFunctions::ExecuteCommand(("SetAngle z " + to_string(zRot)).c_str(), RemotePlayerMap[networkId].actor);
+					NativeFunctions::ExecuteCommand(("SetAngle x " + to_string(xRot)).c_str(), RemotePlayerMap[playerNr].actor);
+					NativeFunctions::ExecuteCommand(("SetAngle y " + to_string(yRot)).c_str(), RemotePlayerMap[playerNr].actor);
+					NativeFunctions::ExecuteCommand(("SetAngle z " + to_string(zRot)).c_str(), RemotePlayerMap[playerNr].actor);
 				}
 
-				if (RemotePlayerMap[networkId].sitAnim == "")
+				if (RemotePlayerMap[playerNr].sitAnim == "")
 				{
 					// The Actor exits a sit, or idle animation.
-					if (RemotePlayerMap[networkId].sitType == 1000)
+					if (RemotePlayerMap[playerNr].sitType == 1000)
 					{
-						SetDontMove(GameState::skyrimVMRegistry, 0, RemotePlayerMap[networkId].actor, false);
-						NativeFunctions::SendAnimationEvent(RemotePlayerMap[networkId].actor, "IdleForceDefaultState");
-						NativeFunctions::ExecuteCommand("SetUnconscious 0", RemotePlayerMap[networkId].actor);
-						RemotePlayerMap[networkId].sitType = 0;
+						SetDontMove(GameState::skyrimVMRegistry, 0, RemotePlayerMap[playerNr].actor, false);
+						NativeFunctions::SendAnimationEvent(RemotePlayerMap[playerNr].actor, "IdleForceDefaultState");
+						NativeFunctions::ExecuteCommand("SetUnconscious 0", RemotePlayerMap[playerNr].actor);
+						RemotePlayerMap[playerNr].sitType = 0;
 					}
 					// Shake the Actor out of its current sit/idle animation if it isn't supposed to be sitting/idling.
-					else if (RemotePlayerMap[networkId].sitType == 0)
+					else if (RemotePlayerMap[playerNr].sitType == 0)
 					{
-						if (GetSitAnimation(NULL, RemotePlayerMap[networkId].actor).data && GetSitAnimation(NULL, RemotePlayerMap[networkId].actor).data != "")
-							NativeFunctions::SendAnimationEvent(RemotePlayerMap[networkId].actor, "IdleForceDefaultState");
+						if (GetSitAnimation(NULL, RemotePlayerMap[playerNr].actor).data && GetSitAnimation(NULL, RemotePlayerMap[playerNr].actor).data != "")
+							NativeFunctions::SendAnimationEvent(RemotePlayerMap[playerNr].actor, "IdleForceDefaultState");
 					}
 				}
 
 				else
 				{
 					// The Actor enters the a new sit, or idle animation.
-					if (RemotePlayerMap[networkId].sitType == 0)
+					if (RemotePlayerMap[playerNr].sitType == 0)
 					{
-						RemotePlayerMap[networkId].sitType = 1000;
-						SetDontMove(GameState::skyrimVMRegistry, 0, RemotePlayerMap[networkId].actor, true);
-						RemotePlayerMap[networkId].actor->ClearKeepOffsetFromActor();
-						NativeFunctions::ExecuteCommand("SetUnconscious 1", RemotePlayerMap[networkId].actor);
-						NativeFunctions::SendAnimationEvent(RemotePlayerMap[networkId].actor, RemotePlayerMap[networkId].sitAnim.c_str());
+						RemotePlayerMap[playerNr].sitType = 1000;
+						SetDontMove(GameState::skyrimVMRegistry, 0, RemotePlayerMap[playerNr].actor, true);
+						RemotePlayerMap[playerNr].actor->ClearKeepOffsetFromActor();
+						NativeFunctions::ExecuteCommand("SetUnconscious 1", RemotePlayerMap[playerNr].actor);
+						NativeFunctions::SendAnimationEvent(RemotePlayerMap[playerNr].actor, RemotePlayerMap[playerNr].sitAnim.c_str());
 					}
 				}
 
 				// Used to alter where the Actor looks, and is used when the Actor is casting magic, or firing a bow. This is unfinished.
-				float xOffset = 1000 * sin(yRot), yOffset = 1000 * cos(yRot), zOffset = yRot + (RemotePlayerMap[networkId].height * 0.75);
+				float xOffset = 1000 * sin(yRot), yOffset = 1000 * cos(yRot), zOffset = yRot + (RemotePlayerMap[playerNr].height * 0.75);
 
 				//Move target controller
-				NativeFunctions::ExecuteCommand(("MoveTo " + Utilities::GetFormIDString(RemotePlayerMap[networkId].actor->formID) + " " + to_string(xOffset) + " " + to_string(yOffset) + " " + to_string(zOffset)).c_str(), RemotePlayerMap[networkId].targetController);
+				NativeFunctions::ExecuteCommand(("MoveTo " + Utilities::GetFormIDString(RemotePlayerMap[playerNr].actor->formID) + " " + to_string(xOffset) + " " + to_string(yOffset) + " " + to_string(zOffset)).c_str(), RemotePlayerMap[playerNr].targetController);
 
-				//SetLookAt(GameState::skyrimVMRegistry, 0, RemotePlayerMap[networkId].actor, RemotePlayerMap[networkId].targetController, false);
+				//SetLookAt(GameState::skyrimVMRegistry, 0, RemotePlayerMap[playerNr].actor, RemotePlayerMap[playerNr].targetController, false);
 
 				// Signals the end of the Actor's current jump state.
-				if (RemotePlayerMap[networkId].jump && RemotePlayerMap[networkId].actor->pos.z <= RemotePlayerMap[networkId].jumpZOrigin)
-					RemotePlayerMap[networkId].jump = false;
+				if (RemotePlayerMap[playerNr].jump && RemotePlayerMap[playerNr].actor->pos.z <= RemotePlayerMap[playerNr].jumpZOrigin)
+					RemotePlayerMap[playerNr].jump = false;
 
 				// Toggle the actor's alert state.
-				if (RemotePlayerMap[networkId].actor->actorState.IsWeaponDrawn())
+				if (RemotePlayerMap[playerNr].actor->actorState.IsWeaponDrawn())
 				{
-					if (!RemotePlayerMap[networkId].alert)
+					if (!RemotePlayerMap[playerNr].alert)
 					{
-						NativeFunctions::ExecuteCommand("SetAlert 0", RemotePlayerMap[networkId].actor);
-						NativeFunctions::SendAnimationEvent(RemotePlayerMap[networkId].actor, "Unequip");
+						NativeFunctions::ExecuteCommand("SetAlert 0", RemotePlayerMap[playerNr].actor);
+						NativeFunctions::SendAnimationEvent(RemotePlayerMap[playerNr].actor, "Unequip");
 					}
 				}
 
 				else
 				{
-					if (RemotePlayerMap[networkId].alert)
+					if (RemotePlayerMap[playerNr].alert)
 					{
-						NativeFunctions::ExecuteCommand("SetAlert 1", RemotePlayerMap[networkId].actor);
+						NativeFunctions::ExecuteCommand("SetAlert 1", RemotePlayerMap[playerNr].actor);
 
-						if (RemotePlayerMap[networkId].equippedSpell)
-							NativeFunctions::SendAnimationEvent(RemotePlayerMap[networkId].actor, "Magic_Equip");
+						if (RemotePlayerMap[playerNr].equippedSpell)
+							NativeFunctions::SendAnimationEvent(RemotePlayerMap[playerNr].actor, "Magic_Equip");
 						else
-							NativeFunctions::SendAnimationEvent(RemotePlayerMap[networkId].actor, "weapEquip");
+							NativeFunctions::SendAnimationEvent(RemotePlayerMap[playerNr].actor, "weapEquip");
 					}
 				}
 			}
@@ -1511,50 +1322,39 @@ public:
 
 		else if (eventCode == NetworkState::EV::ID_SET_WEATHER)
 		{
-			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
-			int64 networkId = ValueObject<int64>(hashData.getValue(1)).getDataCopy();
-
-			if (!IsSpawned(networkId))
+			if (!IsSpawned(playerNr))
 				return;
 
-			UInt32 weatherId = (int64)ValueObject<int64>(hashData.getValue(0)).getDataCopy();
-			if (!IsLocationMaster() && IsEnabled(RemotePlayerMap[networkId].actor))
-				PushToSkyrim("Weather", networkId, *g_thePlayer, vector<string>{ to_string(weatherId) });
+			UInt32 weatherId = (int64)ValueObject<int64>(eventContent).getDataCopy();
+			if (!IsLocationMaster() && IsEnabled(RemotePlayerMap[playerNr].actor))
+				PushToSkyrim("Weather", playerNr, *g_thePlayer, vector<string>{ to_string(weatherId) });
 
 			Tests::debug("ID_SET_WEATHER received.");
 		}
 
 		else if (eventCode == NetworkState::EV::ID_SET_ANIMATION)
 		{
-			Hashtable hashData = ValueObject<Hashtable>(eventContent).getDataCopy();
-			int64 networkId = ValueObject<int64>(hashData.getValue(1)).getDataCopy();
-
-			if (!IsSpawned(networkId))
-				return;
-
 			// The player's animation is set here, and processed on the next "ID_POSITION_UPDATE"
-			JString dataString = ValueObject<JString>(hashData.getValue(0)).getDataCopy();
-			RemotePlayerMap[networkId].sitAnim = dataString.UTF8Representation().cstr();
+			JString dataString = ValueObject<JString>(eventContent).getDataCopy();
+			RemotePlayerMap[playerNr].sitAnim = dataString.UTF8Representation().cstr();
 			Tests::debug("ID_SET_ANIMATION received.");
 		}
 
 		else if (eventCode == NetworkState::EV::ID_NPC_UPDATE)
 		{
-			Hashtable tNpcPlayerHash = ValueObject<Hashtable>(eventContent).getDataCopy();
-			int64 networkId = ValueObject<int64>(tNpcPlayerHash.getValue<int>(tNpcPlayerHash.getSize() - 1)).getDataCopy();
-
-			if (!IsSpawned(networkId) || IsLocationMaster())
+			if (!IsSpawned(playerNr) || IsLocationMaster())
 				return;
 
 			// We check to see if this player is enabled in our game. If they are then they are in the same location as us.
-			if (IsEnabled(RemotePlayerMap[networkId].actor))
+			if (IsEnabled(RemotePlayerMap[playerNr].actor))
 			{
+				Hashtable tNpcPlayerHash = ValueObject<Hashtable>(eventContent).getDataCopy();
 				PlayerData tNpcPlayer;
 
-				for (int i = 0; i < tNpcPlayerHash.getKeys().getSize() - 1; i++)
+				for (int i = 0; i < tNpcPlayerHash.getKeys().getSize(); i++)
 				{
 					PlayerData::Deserialize(ValueObject<Hashtable>(tNpcPlayerHash.getValue(i)).getDataCopy(), tNpcPlayer);
-					RemoteNpcUpdates.push(pair<UInt32, PlayerData>(networkId, tNpcPlayer));
+					RemoteNpcUpdates.push(pair<int, PlayerData>(playerNr, tNpcPlayer));
 				}
 			}
 			Tests::debug("ID_NPC_UPDATE received.");
@@ -1562,135 +1362,136 @@ public:
 	}
 
 	// Receive various events, these can all be converted and moved to "ReceiveEvent" at some point. As sending strings is unnecessary.
-	inline static void OnPublicMessage(UInt32 networkId, JString message)
+	inline static void OnPublicMessage(int playerNr, JString message)
 	{
 		string sMesg = message.UTF8Representation();
 		char* dest = (char*)sMesg.c_str();
 		vector<string> values = split(dest, ',');
+		int id = playerNr;
 
 		if (values[0] == "StartSneaking")
-			PushToSkyrim("StartSneaking", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("StartSneaking", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "StopSneaking")
-			PushToSkyrim("StopSneaking", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("StopSneaking", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "StartJumping")
 		{
-			RemotePlayerMap[networkId].jumpZOrigin = RemotePlayerMap[networkId].actor->pos.z;
-			PushToSkyrim("StartJumping", networkId, RemotePlayerMap[networkId].actor);
-			RemotePlayerMap[networkId].jump = true;
+			RemotePlayerMap[id].jumpZOrigin = RemotePlayerMap[id].actor->pos.z;
+			PushToSkyrim("StartJumping", id, RemotePlayerMap[id].actor);
+			RemotePlayerMap[id].jump = true;
 		}
 		else if (values[0] == "StartDraw")
-			RemotePlayerMap[networkId].alert = true;
+			RemotePlayerMap[playerNr].alert = true;
 		else if (values[0] == "StartSheath")
 		{
-			RemotePlayerMap[networkId].alert = false;
-			PushToSkyrim("StartSheath", networkId, RemotePlayerMap[networkId].actor);
+			RemotePlayerMap[playerNr].alert = false;
+			PushToSkyrim("StartSheath", id, RemotePlayerMap[id].actor);
 		}
 		else if (values[0] == "AttackRight")
-			PushToSkyrim("AttackRight", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("AttackRight", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "AttackLeft")
-			PushToSkyrim("AttackLeft", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("AttackLeft", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "actorValues")
-			PushToSkyrim("actorValues", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("actorValues", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "AttackDual")
-			PushToSkyrim("AttackDual", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("AttackDual", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "InterruptCast")
-			PushToSkyrim("InterruptCast", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("InterruptCast", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "InterruptCastLeft")
-			PushToSkyrim("InterruptCastLeft", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("InterruptCastLeft", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "InterruptCastRight")
-			PushToSkyrim("InterruptCastRight", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("InterruptCastRight", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "CastLeft")
-			PushToSkyrim("CastLeft", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("CastLeft", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "CastRight")
-			PushToSkyrim("CastRight", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("CastRight", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "DualCast")
-			PushToSkyrim("DualCast", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("DualCast", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "BlockStart")
-			PushToSkyrim("BlockStart", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("BlockStart", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "BlockStop")
-			PushToSkyrim("BlockStop", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("BlockStop", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "BowAttack")
-			PushToSkyrim("BowAttack", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("BowAttack", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "FireBow")
-			PushToSkyrim("FireBow", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("FireBow", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "BashAttack")
-			PushToSkyrim("BashAttack", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("BashAttack", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "ShoutRelease")
-			PushToSkyrim("ShoutRelease", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("ShoutRelease", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "meleeDamage")
-			PushToSkyrim("MeleeDamage", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("MeleeDamage", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "unarmedDamage")
-			PushToSkyrim("UnarmedDamage", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("UnarmedDamage", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "paralysis")
-			PushToSkyrim("Paralysis", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("Paralysis", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "invisibility")
-			PushToSkyrim("Invisibility", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("Invisibility", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "waterBreathing")
-			PushToSkyrim("WaterBreathing", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("WaterBreathing", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "waterWalking")
-			PushToSkyrim("WaterWalking", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("WaterWalking", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "attackDamageMult")
-			PushToSkyrim("AttackDamageMult", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("AttackDamageMult", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "speedMult")
-			PushToSkyrim("SpeedMult", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("SpeedMult", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "damageResist")
-			PushToSkyrim("DamageResist", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("DamageResist", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "magicResist")
-			PushToSkyrim("MagicResist", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("MagicResist", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "equip")
-			PushToSkyrim("Equip", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("Equip", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "equipspell")
-			PushToSkyrim("EquipSpell", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("EquipSpell", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "removeSpellLeft")
-			PushToSkyrim("RemoveSpellLeft", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("RemoveSpellLeft", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "removeSpellRight")
-			PushToSkyrim("RemoveSpellRight", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("RemoveSpellRight", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "equipShout")
-			PushToSkyrim("EquipShout", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("EquipShout", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "faceset")
-			NativeFunctions::SetFaceTextureSet(RemotePlayerMap[networkId].object, FormID(strtoul(values[1].c_str(), nullptr, 0), networkId).getFull());
+			NativeFunctions::SetFaceTextureSet(RemotePlayerMap[id].object, FormID(strtoul(values[1].c_str(), nullptr, 0), playerNr).getFull());
 		else if (values[0] == "brow")
-			PushToSkyrim("SetBrow", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetBrow", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "scar")
-			PushToSkyrim("SetScar", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetScar", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "beard")
-			PushToSkyrim("SetBeard", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetBeard", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "hair")
-			PushToSkyrim("SetHair", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetHair", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "eyes")
-			PushToSkyrim("SetEyes", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetEyes", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "head")
-			PushToSkyrim("SetHead", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetHead", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "mouth")
-			PushToSkyrim("SetMouth", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetMouth", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "button")
-			PushToSkyrim("ActivateButton", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("ActivateButton", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "activate")
-			PushToSkyrim("ActivateAnimation", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("ActivateAnimation", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "setstage")
-			PushToSkyrim("SetStage", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("SetStage", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "ridehorse")
-			PushToSkyrim("RideHorse", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("RideHorse", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "dismounthorse")
-			PushToSkyrim("DismountHorse", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("DismountHorse", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "getup")
-			PushToSkyrim("Getup", networkId, RemotePlayerMap[networkId].actor);
+			PushToSkyrim("Getup", id, RemotePlayerMap[id].actor);
 		else if (values[0] == "dropItem")
-			PushToSkyrim("DropItem", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("DropItem", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "setpv")
-			NativeFunctions::ExecuteCommand((char*)("SETPV " + values[1] + " " + values[2]).c_str(), RemotePlayerMap[networkId].object);
+			NativeFunctions::ExecuteCommand((char*)("SETPV " + values[1] + " " + values[2]).c_str(), RemotePlayerMap[id].object);
 		else if (values[0] == "consolecommand")
 		{
 			std::string commandStripped = values[1].substr(7);
-			NativeFunctions::ExecuteCommand((char*)commandStripped.c_str(), RemotePlayerMap[networkId].object);
+			NativeFunctions::ExecuteCommand((char*)commandStripped.c_str(), RemotePlayerMap[id].object);
 		}
 		else if (values[0] == "dFlag")
-			PushToSkyrim("DeathFlag", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+			PushToSkyrim("DeathFlag", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		else if (values[0] == "wthr")
 		{
 			//The weather is changed if the client is not the master
 			if (!IsLocationMaster())
-				PushToSkyrim("Weather", networkId, RemotePlayerMap[networkId].actor, *Utilities::StripFront(&values));
+				PushToSkyrim("Weather", id, RemotePlayerMap[id].actor, *Utilities::StripFront(&values));
 		}
 		else
 			return;
@@ -1712,8 +1513,6 @@ public:
 			npcOutHash.put<int, Hashtable>(count, it->second.Serialize());
 			count++;
 		}
-
-		npcOutHash.put<int, int64>(count, NetworkState::networkId);
 
 		if (count > 0)
 			Networking::instance->sendEvent<Hashtable>(true, npcOutHash, NetworkState::EV::ID_NPC_UPDATE, NetworkState::CHANNEL::EVENT);
@@ -1742,12 +1541,8 @@ public:
 			{
 				TESWeather* weather = GetCurrentWeather(GameState::skyrimVMRegistry, 0, nullptr);
 
-				Hashtable hashData = Hashtable();
-				hashData.put<int, int64>(0, (int64)weather->formID);
-				hashData.put<int, int64>(1, NetworkState::networkId);
-
 				if (weather)
-					Networking::instance->sendEvent<Hashtable>(true, hashData, NetworkState::EV::ID_SET_WEATHER, NetworkState::CHANNEL::EVENT);
+					Networking::instance->sendEvent<int64>(true, (int64)weather->formID, NetworkState::EV::ID_SET_WEATHER, NetworkState::CHANNEL::EVENT);
 			}
 
 			dayTimer.StartTimer();
@@ -1755,17 +1550,16 @@ public:
 	}
 
 	// Update other players of changes to the local player's position/location.
-	inline static void SendModifiedPosition(float x, float y, float z, int xRot, int yRot, int zRot)
+	inline static void SendModifiedPosition(int x, int y, int z, int xRot, int yRot, int zRot)
 	{
 		Hashtable hashData = Hashtable();
 
-		hashData.put<int, float>(0, x);
-		hashData.put<int, float>(1, y);
-		hashData.put<int, float>(2, z);
+		hashData.put<int, int>(0, x);
+		hashData.put<int, int>(1, y);
+		hashData.put<int, int>(2, z);
 		hashData.put<int, int>(3, xRot);
 		hashData.put<int, int>(4, yRot);
 		hashData.put<int, int>(5, zRot);
-		hashData.put<int, int64>(6, NetworkState::networkId);
 
 		Networking::instance->sendEvent<Hashtable>(false, hashData, NetworkState::EV::ID_POSITION_UPDATE, NetworkState::CHANNEL::EVENT);
 	}
@@ -1778,14 +1572,11 @@ public:
 
 		Hashtable hashData = Hashtable();
 
-		int count = 0;
-		for (int i = 0; i < lockList.size(); i++, count+=2)
+		for (int i = 0, count = 0; i < lockList.size(); i++, count+=2)
 		{
 			hashData.put<int, int64>(count, lockList[i].id);
 			hashData.put<int, bool>(count + 1, lockList[i].isLocked);
 		}
-
-		hashData.put<int, int64>(count + 2, NetworkState::networkId);
 
 		Networking::instance->sendEvent<Hashtable>(true, hashData, NetworkState::EV::ID_LOCK_UPDATE, NetworkState::CHANNEL::EVENT);
 		lockList.clear();
@@ -1794,11 +1585,7 @@ public:
 	// Send the local player's current idle animation. This is for sitting, activation animations, etc... 
 	inline static void SendAnimation(const char* anim)
 	{
-		Hashtable hashData = Hashtable();
-		hashData.put<int, JString>(0, JString(anim));
-		hashData.put<int, int64>(1, NetworkState::networkId);
-
-		Networking::instance->sendEvent<Hashtable>(false, hashData, NetworkState::EV::ID_SET_ANIMATION, NetworkState::CHANNEL::EVENT);
+		Networking::instance->sendEvent<JString>(false, JString(anim), NetworkState::EV::ID_SET_ANIMATION, NetworkState::CHANNEL::EVENT);
 	}
 
 	// Send the local player state either for the first time or in response to a request from another player.
@@ -1840,10 +1627,9 @@ public:
 		jUserVar.put<int, int64>(28, faceset);
 		jUserVar.put<int, int64>(29, hairColor);
 		jUserVar.put<int, int64>(30, voiceId);
-		jUserVar.put<int, int64>(31, NetworkState::networkId);
 
 		// This is supposed to be cached, but the cached version results in a crash....
-		Networking::instance->sendEvent<Hashtable>(true, jUserVar, NetworkState::EV::ID_SPAWN_PLAYER, NetworkState::CHANNEL::EVENT);
+		Networking::instance->sendEventCached<Hashtable>(true, jUserVar, NetworkState::EV::ID_SPAWN_PLAYER, NetworkState::CHANNEL::EVENT);
 	}
 
 	private:

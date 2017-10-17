@@ -302,9 +302,9 @@ public:
 		{
 			SkyUtility::instance->Run();
 
-			if (GameState::IsMenuOpen && !IsInMenuMode(GameState::skyrimVMRegistry, 0, NULL))
+			if (GameState::IsMenuOpen && !IsInMenuMode(GameState::skyrimVMRegistry, 0, nullptr))
 				GameState::IsMenuOpen = false;
-			else if (!GameState::IsMenuOpen && IsInMenuMode(GameState::skyrimVMRegistry, 0, NULL))
+			else if (!GameState::IsMenuOpen && IsInMenuMode(GameState::skyrimVMRegistry, 0, nullptr))
 				GameState::IsMenuOpen = true;
 
 			if (!GameState::IsMenuOpen)
@@ -322,6 +322,8 @@ public:
 
 					if (SkyUtility::IsEventKey(evn, NativeFunctions::GetMappedKey(nullptr, "Sneak", 0xFF)))
 					{
+						NetworkHandler::PrintNote("Sneak pressed.");
+
 						if (IsSneaking(GameState::skyrimVMRegistry, 0, *g_thePlayer))
 							NetworkHandler::SendData("StartSneaking");
 						else
@@ -549,9 +551,15 @@ public:
 			else
 			{
 				if (loadingMenuOpen && !papyrusUI::IsMenuOpen(nullptr, "Loading Menu"))
+				{
+					GameState::IsRefreshing = true;
 					loadingMenuOpen = false;
+				}
 				else if (mistMenuOpen && !papyrusUI::IsMenuOpen(nullptr, "Mist Menu"))
+				{
+					GameState::IsRefreshing = true;
 					mistMenuOpen = false;
+				}
 
 				//Only refresh if we've already populated our master list, a loading menu was open, and is now closed.
 				if (!loadingMenuOpen && !mistMenuOpen && GameState::IsLoading)
