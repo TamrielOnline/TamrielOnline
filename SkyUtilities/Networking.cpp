@@ -87,6 +87,12 @@ void Networking::registerForStateUpdates(NetworkLogicListener* listener)
 
 void Networking::connect()
 {
+	if (NetworkState::networkId == 0)
+	{
+		srand(time(NULL));
+		NetworkState::networkId = rand() % UINT32_MAX;
+	}
+
 	//Connecting to Photon
 	mLoadBalancingClient.connect();
 	mStateAccessor.setState(STATE_CONNECTING);
@@ -146,8 +152,8 @@ void Networking::debugReturn(int debugLevel, const ExitGames::Common::JString& s
 
 bool Networking::leaveRoom()
 {
-	return mLoadBalancingClient.opLeaveRoom(false, false);
 	mStateAccessor.setState(STATE_LEAVING);
+	return mLoadBalancingClient.opLeaveRoom(false, false);
 }
 
 void Networking::reconnect()
@@ -175,7 +181,6 @@ void Networking::connectionErrorReturn(int errorCode)
 	//Received connection error
 	EGLOG(ExitGames::Common::DebugLevel::ERRORS, L"code: %d", errorCode);
 	mStateAccessor.setState(STATE_DISCONNECTED);
-	OnDisconnected();
 	_MESSAGE("Disconnected due to an connection error.");
 }
 
@@ -194,6 +199,9 @@ void Networking::warningReturn(int warningCode)
 
 void Networking::serverErrorReturn(int errorCode)
 {
+	if (mLoadBalancingClient.reconnectAndRejoin())
+		return;
+
 	//Received error from server
 	EGLOG(ExitGames::Common::DebugLevel::ERRORS, L"code: %d", errorCode);
 	_MESSAGE("Server error.");
@@ -247,7 +255,6 @@ void Networking::connectReturn(int errorCode, const ExitGames::Common::JString& 
 	{
 		EGLOG(ExitGames::Common::DebugLevel::ERRORS, L"%ls", errorString.cstr());
 		mStateAccessor.setState(STATE_DISCONNECTING);
-		OnDisconnected();
 		return;
 	}
 
@@ -261,7 +268,6 @@ void Networking::disconnectReturn(void)
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"");
 	_MESSAGE("Disconnected");
 	mStateAccessor.setState(STATE_DISCONNECTED);
-	OnDisconnected();
 	mLastPlayerNr = -1;
 }
 
@@ -270,11 +276,15 @@ void Networking::createRoomReturn(int localPlayerNr, const ExitGames::Common::Ha
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"");
 	if (errorCode)
 	{
+		if (mLoadBalancingClient.reconnectAndRejoin())
+			return;
+
 		//opCreateRoom() failed
 		EGLOG(ExitGames::Common::DebugLevel::ERRORS, L"%ls", errorString.cstr());
 		mStateAccessor.setState(STATE_CONNECTED);
 		return;
 	}
+
 	mLastJoinedRoom = mLoadBalancingClient.getCurrentlyJoinedRoom().getName();
 	mLastPlayerNr = localPlayerNr;
 
@@ -289,6 +299,9 @@ void Networking::joinOrCreateRoomReturn(int localPlayerNr, const ExitGames::Comm
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"");
 	if (errorCode)
 	{
+		if (mLoadBalancingClient.reconnectAndRejoin())
+			return;
+
 		//opJoinOrCreateRoom() failed
 		EGLOG(ExitGames::Common::DebugLevel::ERRORS, L"%ls", errorString.cstr());
 		mStateAccessor.setState(STATE_CONNECTED);
@@ -310,6 +323,9 @@ void Networking::joinRoomReturn(int localPlayerNr, const ExitGames::Common::Hash
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"");
 	if (errorCode)
 	{
+		if (mLoadBalancingClient.reconnectAndRejoin())
+			return;
+
 		//opJoinRoom() failed
 		mLastJoinedRoom = L"";
 		mLastPlayerNr = 0;
@@ -317,6 +333,9 @@ void Networking::joinRoomReturn(int localPlayerNr, const ExitGames::Common::Hash
 		mStateAccessor.setState(STATE_CONNECTED);
 		return;
 	}
+
+	mLastJoinedRoom = mLoadBalancingClient.getCurrentlyJoinedRoom().getName();
+	mLastPlayerNr = localPlayerNr;
 
 	//Room has been successfully joined, regularly sending dummy events now
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"localPlayerNr: %d", localPlayerNr);
@@ -330,6 +349,9 @@ void Networking::joinRandomRoomReturn(int localPlayerNr, const ExitGames::Common
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"");
 	if (errorCode)
 	{
+		if (mLoadBalancingClient.reconnectAndRejoin())
+			return;
+
 		//opJoinRandomRoom() failed
 		EGLOG(ExitGames::Common::DebugLevel::ERRORS, L"%ls", errorString.cstr());
 		mStateAccessor.setState(STATE_CONNECTED);
@@ -350,10 +372,12 @@ void Networking::leaveRoomReturn(int errorCode, const ExitGames::Common::JString
 	EGLOG(ExitGames::Common::DebugLevel::INFO, L"");
 	if (errorCode)
 	{
+		if (mLoadBalancingClient.reconnectAndRejoin())
+			return;
+
 		//opLeaveRoom() failed
 		EGLOG(ExitGames::Common::DebugLevel::ERRORS, L"%ls", errorString.cstr());
 		mStateAccessor.setState(STATE_DISCONNECTING);
-		OnDisconnected();
 		return;
 	}
 
@@ -401,5 +425,7 @@ bool Networking::getIsHost()
 	if (!mLoadBalancingClient.getIsInRoom())
 		return false;
 
-	return mLoadBalancingClient.getCurrentlyJoinedRoom().getPlayerForNumber(mLastPlayerNr)->getIsMasterClient();
+	const ExitGames::LoadBalancing::Player* player = mLoadBalancingClient.getCurrentlyJoinedRoom().getPlayerForNumber(mLastPlayerNr);
+
+	return (player ? player->getIsMasterClient() : false);
 }

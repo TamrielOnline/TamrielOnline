@@ -7,7 +7,7 @@ map<BGSLocation*, vector<BGSLocation*>> NetworkHandler::LocChildLocationLookupTa
 map<UInt32, PlayerData> NetworkHandler::RemotePlayerMap;
 map<UInt32, PlayerData> NetworkHandler::LocalNpcMap;
 map<UInt32, PlayerData> NetworkHandler::RemoteNpcMap;
-queue<pair<int, PlayerData>> NetworkHandler::RemoteNpcUpdates;
+queue<pair<UInt32, PlayerData>> NetworkHandler::RemoteNpcUpdates;
 set<UInt32> NetworkHandler::disabledNpcs;
 bool NetworkHandler::fullRefresh;
 map<UInt32, bool> NetworkHandler::ForceSpawn;
