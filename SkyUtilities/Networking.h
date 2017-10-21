@@ -126,7 +126,6 @@ public:
 	void (*ReceivedList)();
 	void (*OnConnectionReplication)();
 	void (*OnConnected)();
-	void (*OnDisconnected)();
 	void (*OnExit)(int playerNr);
 	void (*OnRoomEnter)();
 	void (*OnReceiveEvent)(int playerNr, nByte eventCode, const ExitGames::Common::Object& eventContent);
